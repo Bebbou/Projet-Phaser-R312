@@ -1,14 +1,14 @@
 // Scène de démarrage : charge les assets communs avant de lancer le menu.
-class BootScene extends Phaser.Scene {
-  constructor() {
-    super('Boot');
-  }
-
-  preload() {
-    // Les assets (tilesets, spritesheets...) seront chargés ici au fur et à mesure.
-  }
-
-  create() {
-    this.scene.start('Menu');
-  }
+function preloadBoot() {
+  // Les assets communs à tout le jeu se chargeront ici au fur et à mesure.
 }
+
+function createBoot() {
+  this.scene.start('Menu');
+}
+
+var sceneBoot = {
+  key: 'Boot',
+  preload: preloadBoot,
+  create: createBoot
+};
