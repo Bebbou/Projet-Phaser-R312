@@ -1,0 +1,296 @@
+<title>Salle 1 — Plan</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #eef0f4;
+    --panel: #ffffff;
+    --panel-2: #f5f6f9;
+    --border: #d7dbe3;
+    --text: #1b1e24;
+    --text-dim: #5b6270;
+    --accent: #c76b3f;
+    --accent-soft: #f6e2d3;
+    --hole: #24262c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161b;
+      --panel: #1c1f26;
+      --panel-2: #20232b;
+      --border: #2c303a;
+      --text: #e7e5e0;
+      --text-dim: #9098a8;
+      --accent: #e8935a;
+      --accent-soft: #3a2c22;
+      --hole: #0a0b0d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161b;
+    --panel: #1c1f26;
+    --panel-2: #20232b;
+    --border: #2c303a;
+    --text: #e7e5e0;
+    --text-dim: #9098a8;
+    --accent: #e8935a;
+    --accent-soft: #3a2c22;
+    --hole: #0a0b0d;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    padding: 32px 20px 56px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+
+  header { margin-bottom: 28px; }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 600;
+    margin: 6px 0 8px;
+    text-wrap: balance;
+  }
+  header p {
+    color: var(--text-dim);
+    font-size: 15px;
+    max-width: 62ch;
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(240px, 0.9fr);
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .panel h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+  }
+
+  #roomCanvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+  .dims {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .dims strong { color: var(--text); font-weight: 500; }
+
+  .legend-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .legend-item {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  .legend-item canvas {
+    image-rendering: pixelated;
+    border-radius: 4px;
+    width: 40px;
+    height: 40px;
+    display: block;
+  }
+  .legend-name {
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .legend-coord {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .legend-tag {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 3px;
+  }
+
+  .later { margin-top: 20px; }
+  .later h2 { margin-bottom: 10px; }
+
+  footer {
+    margin-top: 24px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  footer code {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Salle 1 · 15 × 10 cases · tuiles 8×8</div>
+    <h1>Plan de la première salle</h1>
+    <p>Aperçu construit avec ton tileset Micro Roguelike (<code style="font-family: 'IBM Plex Mono', monospace; font-size: 13px;">colored_tilemap_packed.png</code>). Une boîte fermée toute simple : sol partout, mur tout autour — de quoi valider la carte dans Tiled avant d'ajouter des obstacles.</p>
+  </header>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>Rendu de la salle</h2>
+      <canvas id="roomCanvas" width="480" height="320"></canvas>
+      <div class="dims">
+        <span>15 colonnes × 10 lignes</span>
+        <strong>120 × 80 px réels</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Tuiles utilisées ici</h2>
+      <ul class="legend-list" id="legendNow"></ul>
+
+    </section>
+  </div>
+
+  <footer>
+    Coordonnées données en <em>colonne, ligne</em> dans le tileset (8×8 px par case). Dans Tiled, calque <code>Sol</code> : tuile <strong>(1,1)</strong> partout. Calque <code>Murs</code> : <strong>(1,0)</strong> sur les rangées du haut/bas, <strong>(0,1)</strong> sur la colonne de gauche, <strong>(3,1)</strong> sur celle de droite (ce sont les variantes gauche/droite du même mur dans le tileset). Les tuiles pour le trou et le levier, on les choisira quand on codera ces mécaniques — je ne voulais pas t'en montrer avant d'être sûr de ce qu'elles représentent vraiment.
+  </footer>
+</div>
+
+<script>
+  const TILESET_B64 = "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";
+
+  const TILE_SRC = 8;
+  const roomCols = 15, roomRows = 10;
+  const cellPx = 32;
+
+  // Coordonnées repérées dans le tileset (colonne, ligne) — vérifiées en
+  // échantillonnant les pixels : (1,1) est la seule tuile plate et unie du
+  // tileset (donc le sol), (1,0) est le mur "haut" (bordure claire + ombre),
+  // (0,1)/(3,1) sont les variantes gauche/droite du même mur (une paire
+  // miroir, utile pour les côtés verticaux de la salle).
+  const TILES = {
+    sol:        { x: 1, y: 1 },
+    murHaut:    { x: 1, y: 0 },
+    murGauche:  { x: 0, y: 1 },
+    murDroite:  { x: 3, y: 1 },
+  };
+
+  const img = new Image();
+  img.onload = () => {
+    drawRoom(img);
+    drawLegend(img);
+  };
+  img.src = "data:image/png;base64," + TILESET_B64;
+
+  function drawTileTo(ctx, img, tileCoord, dx, dy, size) {
+    ctx.drawImage(
+      img,
+      tileCoord.x * TILE_SRC, tileCoord.y * TILE_SRC, TILE_SRC, TILE_SRC,
+      dx, dy, size, size
+    );
+  }
+
+  function drawRoom(img) {
+    const canvas = document.getElementById('roomCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    for (let row = 0; row < roomRows; row++) {
+      for (let col = 0; col < roomCols; col++) {
+        let tile = TILES.sol;
+        if (row === 0 || row === roomRows - 1) {
+          tile = TILES.murHaut;
+        } else if (col === 0) {
+          tile = TILES.murGauche;
+        } else if (col === roomCols - 1) {
+          tile = TILES.murDroite;
+        }
+        drawTileTo(ctx, img, tile, col * cellPx, row * cellPx, cellPx);
+      }
+    }
+  }
+
+  function makeSwatch(img, tileCoord) {
+    const c = document.createElement('canvas');
+    c.width = 40; c.height = 40;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    drawTileTo(ctx, img, tileCoord, 0, 0, 40);
+    return c;
+  }
+
+  function legendRow(img, coord, name, tag) {
+    const li = document.createElement('li');
+    li.className = 'legend-item';
+    const swatch = makeSwatch(img, coord);
+    const info = document.createElement('div');
+    info.innerHTML =
+      '<div class="legend-name">' + name + '</div>' +
+      '<div class="legend-coord">tuile (' + coord.x + ', ' + coord.y + ')</div>' +
+      (tag ? '<span class="legend-tag">' + tag + '</span>' : '');
+    li.appendChild(swatch);
+    li.appendChild(info);
+    return li;
+  }
+
+  function drawLegend(img) {
+    const now = document.getElementById('legendNow');
+    now.appendChild(legendRow(img, TILES.sol, 'Sol'));
+    now.appendChild(legendRow(img, TILES.murHaut, 'Mur (haut / bas)'));
+    now.appendChild(legendRow(img, TILES.murGauche, 'Mur (gauche)'));
+    now.appendChild(legendRow(img, TILES.murDroite, 'Mur (droite)'));
+  }
+</script>
