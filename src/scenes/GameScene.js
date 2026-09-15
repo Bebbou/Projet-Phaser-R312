@@ -32,6 +32,7 @@ function createGame() {
   var tileset = carte.addTilesetImage('colored_tilemap_packed', 'tileset');
   carte.createLayer('sol', tileset, 0, 0);
   calqueMur = carte.createLayer('mur', tileset, 0, 0);
+  recolorerMursLateraux();
   dessinerGrille();
 
   camera.setZoom(ZOOM);
@@ -97,6 +98,29 @@ function deplacer(dx, dy) {
   grilleX = nouvelleX;
   grilleY = nouvelleY;
   animerDeplacement();
+}
+
+// Les tuiles de mur gauche/droite du tileset sont surtout noires avec un
+// simple liseré clair sur un bord — ça se confond avec le sol (très sombre
+// lui aussi) et donne l'impression d'un bout de sol qui dépasse sur le mur.
+// On les recolore en gris uni (même teinte que le corps du mur du haut) au
+// lieu d'essayer de faire pivoter une tuile qui n'est pas prévue pour ça
+// (ça donnait un motif de brique cassé/pas naturel à la verticale).
+var COULEUR_MUR_LATERAL = 0x83838f;
+
+function recolorerMursLateraux() {
+  for (var row = 0; row < carte.height; row++) {
+    recolorerTuile(0, row);
+    recolorerTuile(carte.width - 1, row);
+  }
+}
+
+function recolorerTuile(col, row) {
+  var tuile = calqueMur.getTileAt(col, row);
+  if (tuile) {
+    tuile.tint = COULEUR_MUR_LATERAL;
+    tuile.tintFill = true;
+  }
 }
 
 // Dessine un quadrillage discret par-dessus la carte pour bien faire sentir
