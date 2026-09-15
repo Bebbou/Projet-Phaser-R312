@@ -1,6 +1,10 @@
 // Scène de jeu : le joueur se déplace case par case avec les flèches ou ZQSD,
 // sur la carte Tiled chargée depuis src/assets/maps/map.json.
-// Pas encore de système de tour (ça viendra ensuite).
+//
+// Système de tour : chaque déplacement valide du joueur fait avancer le
+// monde d'un tour (finDuTour()). Pour l'instant ça ne fait qu'incrémenter
+// un compteur affiché à l'écran, mais c'est le point d'accroche où viendront
+// se greffer le compte à rebours des pièges et le tour des ennemis.
 var TAILLE_TUILE = 8;
 var ZOOM = 4; // les tuiles font 8px, on zoome pour que ce soit jouable à l'écran
 var SAUT_DUREE = 140; // ms, durée du petit saut entre deux cases
@@ -16,6 +20,8 @@ var carte;
 var calqueMur;
 var sceneJeu; // référence à la scène, nécessaire pour lancer des tweens
 var enDeplacement = false; // bloque les entrées pendant le petit saut
+var numeroTour = 0;
+var texteTour;
 
 function preloadGame() {
   this.load.image('tileset', 'src/assets/tilesets/colored_tilemap_packed.png');
@@ -60,6 +66,22 @@ function createGame() {
     bas: Phaser.Input.Keyboard.KeyCodes.S,
     droite: Phaser.Input.Keyboard.KeyCodes.D
   });
+
+  // Compteur de tour temporaire (fera partie du vrai HUD plus tard).
+  // La caméra de jeu est zoomée x4 : un texte fixé avec setScrollFactor(0)
+  // se retrouve mal placé/invisible dans ce cas (bug connu de Phaser avec
+  // zoom != 1). La solution fiable : une deuxième caméra dédiée au HUD, à
+  // zoom normal, qui ne voit que ce texte — la caméra de jeu l'ignore.
+  texteTour = this.add.text(4, 4, 'Tour : 0', {
+    fontSize: '16px',
+    color: '#ffffff'
+  });
+
+  camera.ignore(texteTour);
+  var camHUD = this.cameras.add(0, 0, this.scale.width, this.scale.height);
+  camHUD.ignore(sceneJeu.children.list.filter(function (objet) {
+    return objet !== texteTour;
+  }));
 }
 
 function updateGame() {
@@ -79,7 +101,7 @@ function updateGame() {
 }
 
 // Déplace le joueur d'une case, seulement si la case visée n'est pas un mur.
-// Le système de tour (pièges, ennemis) viendra se greffer ici ensuite.
+// Un déplacement refusé (mur) ne consomme pas de tour.
 function deplacer(dx, dy) {
   var nouvelleX = grilleX + dx;
   var nouvelleY = grilleY + dy;
@@ -154,9 +176,18 @@ function animerDeplacement() {
       { y: yArrivee, duration: SAUT_DUREE / 2, ease: 'Sine.easeIn' }
     ],
     onComplete: function () {
+      finDuTour();
       enDeplacement = false;
     }
   });
+}
+
+// Appelée une fois l'action du joueur terminée (l'animation de saut finie).
+// C'est ici que viendront se brancher, dans cet ordre : le compte à rebours
+// des tuiles-pièges "rocher", puis le tour de chaque ennemi.
+function finDuTour() {
+  numeroTour++;
+  texteTour.setText('Tour : ' + numeroTour);
 }
 
 var sceneGame = {
