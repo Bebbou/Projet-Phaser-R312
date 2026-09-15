@@ -22,6 +22,10 @@ var sceneJeu; // référence à la scène, nécessaire pour lancer des tweens
 var enDeplacement = false; // bloque les entrées pendant le petit saut
 var numeroTour = 0;
 var texteTour;
+var objectifs = {}; // clé "col,row" -> { x, y, colore }
+var nbObjectifsRestants = 0;
+var grapheObjectifs;
+var COULEUR_OBJECTIF = 0xf5c445;
 
 function preloadGame() {
   this.load.image('tileset', 'src/assets/tilesets/colored_tilemap_packed.png');
@@ -38,7 +42,9 @@ function createGame() {
   var tileset = carte.addTilesetImage('colored_tilemap_packed', 'tileset');
   carte.createLayer('sol', tileset, 0, 0);
   calqueMur = carte.createLayer('mur', tileset, 0, 0);
+  chargerObjectifs();
   dessinerGrille();
+  dessinerObjectifs();
 
   camera.setZoom(ZOOM);
   // La salle est plus petite que l'écran (zoomée), donc on la centre une
@@ -67,18 +73,25 @@ function createGame() {
     droite: Phaser.Input.Keyboard.KeyCodes.D
   });
 
-  // Compteur de tour temporaire (fera partie du vrai HUD plus tard).
-  // La caméra de jeu est zoomée x4 : un texte fixé avec setScrollFactor(0)
-  // se retrouve mal placé/invisible dans ce cas (bug connu de Phaser avec
-  // zoom != 1). La solution fiable : une deuxième caméra dédiée au HUD, à
-  // zoom normal, qui ne voit que ce texte — la caméra de jeu l'ignore.
-  texteTour = this.add.text(4, 4, 'Tour : 0', {
+  // Le HUD est créé en dernier : la caméra dédiée (voir plus bas) capture
+  // un instantané de "tout ce qui existe déjà" pour l'ignorer, donc tout
+  // élément de jeu doit être créé AVANT ce bloc.
+  creerHUD();
+}
+
+// Compteur de tour temporaire (fera partie du vrai HUD plus tard).
+// La caméra de jeu est zoomée x4 : un texte fixé avec setScrollFactor(0) se
+// retrouve mal placé/invisible dans ce cas (bug connu de Phaser avec zoom
+// != 1). La solution fiable : une deuxième caméra dédiée au HUD, à zoom
+// normal, qui ne voit que ce texte — la caméra de jeu l'ignore.
+function creerHUD() {
+  texteTour = sceneJeu.add.text(4, 4, 'Tour : 0', {
     fontSize: '16px',
     color: '#ffffff'
   });
 
   camera.ignore(texteTour);
-  var camHUD = this.cameras.add(0, 0, this.scale.width, this.scale.height);
+  var camHUD = sceneJeu.cameras.add(0, 0, sceneJeu.scale.width, sceneJeu.scale.height);
   camHUD.ignore(sceneJeu.children.list.filter(function (objet) {
     return objet !== texteTour;
   }));
@@ -118,6 +131,7 @@ function deplacer(dx, dy) {
 
   grilleX = nouvelleX;
   grilleY = nouvelleY;
+  verifierObjectif();
   animerDeplacement();
 }
 
@@ -136,15 +150,85 @@ function dessinerGrille() {
   }
 }
 
-// Une case est libre si elle est dans la carte et que le calque "mur" n'y a
-// pas de tuile. Important de vérifier les limites : une case hors carte n'a
-// pas de tuile non plus, donc sans ce test elle serait considérée "libre".
+// Une case est libre si elle est dans la carte, que le calque "mur" n'y a
+// pas de tuile, et qu'elle n'est pas une tuile objectif déjà coloriée
+// (redevient infranchissable une fois coloriée). Important de vérifier les
+// limites : une case hors carte n'a pas de tuile non plus, donc sans ce
+// test elle serait considérée "libre".
 function caseLibre(col, row) {
   if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
     return false;
   }
   var tuileMur = calqueMur.getTileAt(col, row);
-  return tuileMur === null || tuileMur === undefined;
+  if (tuileMur !== null && tuileMur !== undefined) {
+    return false;
+  }
+  var objectif = objectifs[col + ',' + row];
+  if (objectif && objectif.colore) {
+    return false;
+  }
+  return true;
+}
+
+// Lit le calque "objectifs" de la carte Tiled (s'il existe) : chaque case
+// non vide y devient une tuile objectif à colorier. Le calque n'est jamais
+// affiché tel quel — on dessine nos propres marqueurs (voir dessinerObjectifs)
+// plutôt que de dépendre d'une tuile précise du tileset.
+function chargerObjectifs() {
+  var calque = carte.getLayer('objectifs');
+  if (!calque) {
+    return; // la carte n'a pas encore ce calque, rien à charger
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        objectifs[col + ',' + row] = { x: col, y: row, colore: false };
+        nbObjectifsRestants++;
+      }
+    }
+  }
+}
+
+// Redessine tous les marqueurs d'objectifs : un contour pour une tuile pas
+// encore coloriée, un carré plein une fois coloriée.
+function dessinerObjectifs() {
+  if (!grapheObjectifs) {
+    grapheObjectifs = sceneJeu.add.graphics();
+  }
+  grapheObjectifs.clear();
+
+  for (var cle in objectifs) {
+    var o = objectifs[cle];
+    var px = o.x * TAILLE_TUILE;
+    var py = o.y * TAILLE_TUILE;
+    if (o.colore) {
+      grapheObjectifs.fillStyle(COULEUR_OBJECTIF, 0.9);
+      grapheObjectifs.fillRect(px + 1, py + 1, TAILLE_TUILE - 2, TAILLE_TUILE - 2);
+    } else {
+      grapheObjectifs.lineStyle(0.5, COULEUR_OBJECTIF, 0.7);
+      grapheObjectifs.strokeRect(px + 1.5, py + 1.5, TAILLE_TUILE - 3, TAILLE_TUILE - 3);
+    }
+  }
+}
+
+// Si le joueur vient d'arriver sur une tuile objectif pas encore coloriée,
+// on la colorie. Appelée juste après avoir posé le pied sur la case.
+function verifierObjectif() {
+  var objectif = objectifs[grilleX + ',' + grilleY];
+  if (!objectif || objectif.colore) {
+    return;
+  }
+
+  objectif.colore = true;
+  nbObjectifsRestants--;
+  dessinerObjectifs();
+
+  if (nbObjectifsRestants === 0) {
+    // Toutes les tuiles objectif sont coloriées : l'ouverture de la porte
+    // de sortie viendra se brancher ici (prochaine étape du projet).
+    console.log('Toutes les tuiles objectif sont coloriées !');
+  }
 }
 
 // Petit saut animé entre la case de départ et la case d'arrivée : la
