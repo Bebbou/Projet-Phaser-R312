@@ -32,7 +32,6 @@ function createGame() {
   var tileset = carte.addTilesetImage('colored_tilemap_packed', 'tileset');
   carte.createLayer('sol', tileset, 0, 0);
   calqueMur = carte.createLayer('mur', tileset, 0, 0);
-  recolorerMursLateraux();
   dessinerGrille();
 
   camera.setZoom(ZOOM);
@@ -100,29 +99,6 @@ function deplacer(dx, dy) {
   animerDeplacement();
 }
 
-// Les tuiles de mur gauche/droite du tileset sont surtout noires avec un
-// simple liseré clair sur un bord — ça se confond avec le sol (très sombre
-// lui aussi) et donne l'impression d'un bout de sol qui dépasse sur le mur.
-// On les recolore en gris uni (même teinte que le corps du mur du haut) au
-// lieu d'essayer de faire pivoter une tuile qui n'est pas prévue pour ça
-// (ça donnait un motif de brique cassé/pas naturel à la verticale).
-var COULEUR_MUR_LATERAL = 0x83838f;
-
-function recolorerMursLateraux() {
-  for (var row = 0; row < carte.height; row++) {
-    recolorerTuile(0, row);
-    recolorerTuile(carte.width - 1, row);
-  }
-}
-
-function recolorerTuile(col, row) {
-  var tuile = calqueMur.getTileAt(col, row);
-  if (tuile) {
-    tuile.tint = COULEUR_MUR_LATERAL;
-    tuile.tintFill = true;
-  }
-}
-
 // Dessine un quadrillage discret par-dessus la carte pour bien faire sentir
 // que le jeu se joue case par case (la tuile de sol est un aplat uni, sans
 // ça on ne voit pas du tout les limites des cases).
@@ -139,8 +115,12 @@ function dessinerGrille() {
 }
 
 // Une case est libre si elle est dans la carte et que le calque "mur" n'y a
-// pas de tuile.
+// pas de tuile. Important de vérifier les limites : une case hors carte n'a
+// pas de tuile non plus, donc sans ce test elle serait considérée "libre".
 function caseLibre(col, row) {
+  if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
+    return false;
+  }
   var tuileMur = calqueMur.getTileAt(col, row);
   return tuileMur === null || tuileMur === undefined;
 }
