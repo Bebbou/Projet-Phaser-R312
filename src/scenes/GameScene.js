@@ -27,6 +27,16 @@ var nbObjectifsRestants = 0;
 var grapheObjectifs;
 var COULEUR_OBJECTIF = 0xf5c445;
 
+var pieges = {}; // clé "col,row" -> { x, y, compteur, effondre, texte }
+var graphePieges;
+var COMPTEUR_INITIAL = 3;
+var COULEUR_PIEGE_ACTIF = 0xd9534f;
+var COULEUR_TROU = 0x000000;
+
+var joueurMort = false;
+var toucheR;
+var texteMort;
+
 function preloadGame() {
   this.load.image('tileset', 'src/assets/tilesets/colored_tilemap_packed.png');
   this.load.image('player', 'src/assets/characters/player.png');
@@ -37,14 +47,32 @@ function createGame() {
   sceneJeu = this;
   camera = this.cameras.main;
 
-  // La carte : deux calques, "sol" (décor) et "mur" (bloque le déplacement).
+  // Remise à zéro de l'état : la scène peut être relancée (mort du joueur),
+  // et ces variables sont globales au script donc elles survivraient sinon
+  // d'une partie à l'autre.
+  grilleX = 5;
+  grilleY = 5;
+  numeroTour = 0;
+  enDeplacement = false;
+  joueurMort = false;
+  objectifs = {};
+  nbObjectifsRestants = 0;
+  grapheObjectifs = undefined;
+  pieges = {};
+  graphePieges = undefined;
+
+  // La carte : calques "sol" (décor), "mur" (bloque le déplacement),
+  // "objectifs" et "pieges" (données de gameplay, jamais affichés tels
+  // quels — on dessine nos propres marqueurs par-dessus).
   carte = this.make.tilemap({ key: 'salle1' });
   var tileset = carte.addTilesetImage('colored_tilemap_packed', 'tileset');
   carte.createLayer('sol', tileset, 0, 0);
   calqueMur = carte.createLayer('mur', tileset, 0, 0);
   chargerObjectifs();
+  chargerPieges();
   dessinerGrille();
   dessinerObjectifs();
+  dessinerPieges();
 
   camera.setZoom(ZOOM);
   // La salle est plus petite que l'écran (zoomée), donc on la centre une
@@ -72,6 +100,7 @@ function createGame() {
     bas: Phaser.Input.Keyboard.KeyCodes.S,
     droite: Phaser.Input.Keyboard.KeyCodes.D
   });
+  toucheR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
   // Le HUD est créé en dernier : la caméra dédiée (voir plus bas) capture
   // un instantané de "tout ce qui existe déjà" pour l'ignorer, donc tout
@@ -98,6 +127,13 @@ function creerHUD() {
 }
 
 function updateGame() {
+  if (joueurMort) {
+    if (Phaser.Input.Keyboard.JustDown(toucheR)) {
+      sceneJeu.scene.restart();
+    }
+    return;
+  }
+
   if (enDeplacement) {
     return; // on attend la fin du petit saut avant d'accepter une nouvelle touche
   }
@@ -132,6 +168,7 @@ function deplacer(dx, dy) {
   grilleX = nouvelleX;
   grilleY = nouvelleY;
   verifierObjectif();
+  verifierPiege();
   animerDeplacement();
 }
 
@@ -270,8 +307,113 @@ function animerDeplacement() {
 // C'est ici que viendront se brancher, dans cet ordre : le compte à rebours
 // des tuiles-pièges "rocher", puis le tour de chaque ennemi.
 function finDuTour() {
+  if (joueurMort) {
+    return;
+  }
+
   numeroTour++;
   texteTour.setText('Tour : ' + numeroTour);
+  decrementerPieges();
+}
+
+// Lit le calque "pieges" de la carte Tiled (s'il existe) : chaque case non
+// vide devient un piège rocher, avec un compte à rebours et un texte
+// affichant le nombre de tours restants avant effondrement.
+function chargerPieges() {
+  var calque = carte.getLayer('pieges');
+  if (!calque) {
+    return;
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        var texte = sceneJeu.add.text(
+          col * TAILLE_TUILE + TAILLE_TUILE / 2,
+          row * TAILLE_TUILE + TAILLE_TUILE / 2,
+          String(COMPTEUR_INITIAL),
+          { fontSize: '6px', color: '#ffffff' }
+        ).setOrigin(0.5);
+
+        pieges[col + ',' + row] = {
+          x: col,
+          y: row,
+          compteur: COMPTEUR_INITIAL,
+          effondre: false,
+          texte: texte
+        };
+      }
+    }
+  }
+}
+
+// Redessine le fond de chaque piège : rouge/orangé tant qu'il n'est pas
+// effondré, noir (trou) une fois effondré.
+function dessinerPieges() {
+  if (!graphePieges) {
+    graphePieges = sceneJeu.add.graphics();
+  }
+  graphePieges.clear();
+
+  for (var cle in pieges) {
+    var p = pieges[cle];
+    var px = p.x * TAILLE_TUILE;
+    var py = p.y * TAILLE_TUILE;
+    graphePieges.fillStyle(p.effondre ? COULEUR_TROU : COULEUR_PIEGE_ACTIF, p.effondre ? 1 : 0.5);
+    graphePieges.fillRect(px, py, TAILLE_TUILE, TAILLE_TUILE);
+  }
+}
+
+// Décrémente le compte à rebours de chaque piège pas encore effondré ; à 0,
+// le piège devient un trou. Appelée à la fin de chaque tour.
+function decrementerPieges() {
+  var unPiegeVientDeSEffondrer = false;
+
+  for (var cle in pieges) {
+    var p = pieges[cle];
+    if (p.effondre) {
+      continue;
+    }
+    p.compteur--;
+    if (p.compteur <= 0) {
+      p.effondre = true;
+      p.texte.setVisible(false);
+      unPiegeVientDeSEffondrer = true;
+    } else {
+      p.texte.setText(String(p.compteur));
+    }
+  }
+
+  if (unPiegeVientDeSEffondrer) {
+    dessinerPieges();
+    verifierPiege(); // le joueur peut se retrouver sur un trou qui vient d'apparaître sous lui
+  }
+}
+
+// Si le joueur se trouve sur un trou (piège effondré), il meurt.
+function verifierPiege() {
+  var piege = pieges[grilleX + ',' + grilleY];
+  if (piege && piege.effondre) {
+    mourir();
+  }
+}
+
+// Mort du joueur : bloque les entrées et affiche un message d'invite à
+// recommencer. Pas encore de vrai écran de game over (viendra avec le HUD).
+function mourir() {
+  if (joueurMort) {
+    return;
+  }
+  joueurMort = true;
+  joueur.setTint(0xff0000);
+
+  texteMort = sceneJeu.add.text(
+    sceneJeu.scale.width / 2,
+    sceneJeu.scale.height / 2,
+    'Tu es mort\nAppuie sur R pour recommencer',
+    { fontSize: '20px', color: '#ffffff', align: 'center' }
+  ).setOrigin(0.5);
+  camera.ignore(texteMort); // visible seulement via la caméra HUD (voir creerHUD)
 }
 
 var sceneGame = {
