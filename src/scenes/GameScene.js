@@ -59,7 +59,7 @@ var DUREE_TIR = 25; // ms par case parcourue par le projectile
 var COULEUR_TIR = 0xffe066;
 
 var ennemis = {}; // clé "col,row" -> { x, y, sprite }
-var COULEUR_ENNEMI = 0x9b59b6;
+var TEXTURES_ENNEMI = ['ennemi1', 'ennemi2'];
 var DEGAT_ENNEMI = 1;
 var COULEUR_ATTAQUE_ENNEMI = 0xe74c3c;
 var DUREE_ATTAQUE_ENNEMI = 120;
@@ -70,6 +70,8 @@ function preloadGame() {
   this.load.image('levier_inactif', 'src/assets/props/levierROUG.png');
   this.load.image('levier_actif', 'src/assets/props/levierVERT.png');
   this.load.image('porte', 'src/assets/props/porte.png');
+  this.load.image('ennemi1', 'src/assets/characters/enemie1.png');
+  this.load.image('ennemi2', 'src/assets/characters/enemie2.png');
   this.load.tilemapTiledJSON('salle1', 'src/assets/maps/map.json');
 }
 
@@ -739,9 +741,9 @@ function mourir() {
 }
 
 // Lit le calque "ennemis" de la carte Tiled (s'il existe) : chaque case non
-// vide devient un ennemi. Pas encore de sprite dédié — un simple cercle de
-// couleur, comme les premiers marqueurs objectifs/pièges avant d'avoir de
-// vrais sprites.
+// vide devient un ennemi. Sprite tiré au hasard entre les variantes
+// disponibles, juste pour un peu de diversité visuelle — les deux se
+// comportent exactement pareil pour l'instant.
 function chargerEnnemis() {
   var calque = carte.getLayer('ennemis');
   if (!calque) {
@@ -751,12 +753,14 @@ function chargerEnnemis() {
     for (var col = 0; col < carte.width; col++) {
       var tuile = calque.data[row][col];
       if (tuile && tuile.index !== -1) {
-        var sprite = sceneJeu.add.circle(
+        var texture = TEXTURES_ENNEMI[Math.floor(Math.random() * TEXTURES_ENNEMI.length)];
+        // Même ancrage que le joueur (8x10, ancré par le bas) : la tête
+        // dépasse au-dessus de la case.
+        var sprite = sceneJeu.add.sprite(
           col * TAILLE_TUILE + TAILLE_TUILE / 2,
-          row * TAILLE_TUILE + TAILLE_TUILE / 2,
-          TAILLE_TUILE / 2 - 1,
-          COULEUR_ENNEMI
-        );
+          (row + 1) * TAILLE_TUILE,
+          texture
+        ).setOrigin(0.5, 1);
         ennemis[col + ',' + row] = { x: col, y: row, sprite: sprite };
       }
     }
@@ -895,7 +899,7 @@ function deplacerEnnemiVersJoueur(ennemi, cle) {
       ennemi.x = col;
       ennemi.y = row;
       ennemi.sprite.x = col * TAILLE_TUILE + TAILLE_TUILE / 2;
-      ennemi.sprite.y = row * TAILLE_TUILE + TAILLE_TUILE / 2;
+      ennemi.sprite.y = (row + 1) * TAILLE_TUILE; // ancré par le bas, comme à la création
       ennemis[col + ',' + row] = ennemi;
       return;
     }
