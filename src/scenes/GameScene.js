@@ -39,9 +39,7 @@ var texteMort;
 
 var leviers = {}; // clé "col,row" -> { x, y, actif, sprite }
 
-var portes = {}; // clé "col,row" -> { x, y, ouverte }
-var graphePortes;
-var COULEUR_PORTE = 0x8b5a2b;
+var portes = {}; // clé "col,row" -> { x, y, ouverte, sprite }
 
 var toucheE, toucheF;
 
@@ -50,6 +48,7 @@ function preloadGame() {
   this.load.image('player', 'src/assets/characters/player.png');
   this.load.image('levier_inactif', 'src/assets/props/levierROUG.png');
   this.load.image('levier_actif', 'src/assets/props/levierVERT.png');
+  this.load.image('porte', 'src/assets/props/porte.png');
   this.load.tilemapTiledJSON('salle1', 'src/assets/maps/map.json');
 }
 
@@ -72,7 +71,6 @@ function createGame() {
   graphePieges = undefined;
   leviers = {};
   portes = {};
-  graphePortes = undefined;
 
   // La carte : calques "sol" (décor), "mur" (bloque le déplacement),
   // "objectifs", "pieges", "leviers" et "portes" (données de gameplay,
@@ -88,7 +86,6 @@ function createGame() {
   dessinerGrille();
   dessinerObjectifs();
   dessinerPieges();
-  dessinerPortes();
 
   camera.setZoom(ZOOM);
   // La salle est plus petite que l'écran (zoomée), donc on la centre une
@@ -462,40 +459,29 @@ function chargerPortes() {
     for (var col = 0; col < carte.width; col++) {
       var tuile = calque.data[row][col];
       if (tuile && tuile.index !== -1) {
-        portes[col + ',' + row] = { x: col, y: row, ouverte: false };
+        var sprite = sceneJeu.add.image(
+          col * TAILLE_TUILE + TAILLE_TUILE / 2,
+          row * TAILLE_TUILE + TAILLE_TUILE / 2,
+          'porte'
+        );
+        portes[col + ',' + row] = { x: col, y: row, ouverte: false, sprite: sprite };
       }
     }
   }
 }
 
-// Redessine les portes : ne dessine que celles encore fermées (une porte
-// ouverte redevient une case de sol normale, sans marqueur).
-function dessinerPortes() {
-  if (!graphePortes) {
-    graphePortes = sceneJeu.add.graphics();
-  }
-  graphePortes.clear();
-
-  for (var cle in portes) {
-    var p = portes[cle];
-    if (p.ouverte) {
-      continue;
-    }
-    var px = p.x * TAILLE_TUILE;
-    var py = p.y * TAILLE_TUILE;
-    graphePortes.fillStyle(COULEUR_PORTE, 0.9);
-    graphePortes.fillRect(px, py, TAILLE_TUILE, TAILLE_TUILE);
-  }
-}
-
 // Ouvre toutes les portes de la salle (un seul circuit, pas de liaison
 // levier <-> porte précise pour l'instant — suffisant tant qu'il n'y a
-// qu'une salle et peu de portes).
+// qu'une salle et peu de portes). Une porte ouverte disparaît simplement :
+// la case redevient du sol normal.
 function ouvrirPortes() {
   for (var cle in portes) {
-    portes[cle].ouverte = true;
+    var p = portes[cle];
+    if (!p.ouverte) {
+      p.ouverte = true;
+      p.sprite.setVisible(false);
+    }
   }
-  dessinerPortes();
 }
 
 // Touche E/F : actionne le premier levier trouvé adjacent au joueur (haut,
