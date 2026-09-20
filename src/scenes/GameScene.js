@@ -46,6 +46,7 @@ var toucheE, toucheF;
 var PV_INITIAL = 3;
 var pv = PV_INITIAL;
 var textePV;
+var camHUD;
 
 // Direction où le joueur "regarde", mise à jour à chaque déplacement.
 // Ne correspond à aucun sprite différent (pas de sprite de dos) — c'est une
@@ -160,10 +161,21 @@ function creerHUD() {
   elementsHUD.forEach(function (objet) {
     camera.ignore(objet);
   });
-  var camHUD = sceneJeu.cameras.add(0, 0, sceneJeu.scale.width, sceneJeu.scale.height);
+  camHUD = sceneJeu.cameras.add(0, 0, sceneJeu.scale.width, sceneJeu.scale.height);
   camHUD.ignore(sceneJeu.children.list.filter(function (objet) {
     return elementsHUD.indexOf(objet) === -1;
   }));
+}
+
+// À appeler pour tout objet créé PENDANT la partie (balle, futur ennemi...),
+// après le démarrage du HUD. La caméra HUD fait un instantané une seule fois
+// à sa création (voir creerHUD) : tout ce qui apparaît après lui échappe et
+// se retrouve affiché en double, à ses coordonnées brutes — souvent tout
+// près du texte du HUD, d'où l'effet "point bizarre à côté du score".
+function masquerAuHUD(objet) {
+  if (camHUD) {
+    camHUD.ignore(objet);
+  }
 }
 
 function updateGame() {
@@ -178,14 +190,19 @@ function updateGame() {
     return; // on attend la fin du petit saut avant d'accepter une nouvelle touche
   }
 
+  // Shift + direction : se tourner sans se déplacer ni consommer de tour
+  // (utile pour viser une case libre sans y marcher). Direction seule :
+  // déplacement normal (qui tourne aussi le joueur au passage).
+  var seTournerSeulement = clavier.shift.isDown;
+
   if (Phaser.Input.Keyboard.JustDown(clavier.up) || Phaser.Input.Keyboard.JustDown(zqsd.haut)) {
-    deplacer(0, -1);
+    seTournerSeulement ? seTourner(0, -1) : deplacer(0, -1);
   } else if (Phaser.Input.Keyboard.JustDown(clavier.down) || Phaser.Input.Keyboard.JustDown(zqsd.bas)) {
-    deplacer(0, 1);
+    seTournerSeulement ? seTourner(0, 1) : deplacer(0, 1);
   } else if (Phaser.Input.Keyboard.JustDown(clavier.left) || Phaser.Input.Keyboard.JustDown(zqsd.gauche)) {
-    deplacer(-1, 0);
+    seTournerSeulement ? seTourner(-1, 0) : deplacer(-1, 0);
   } else if (Phaser.Input.Keyboard.JustDown(clavier.right) || Phaser.Input.Keyboard.JustDown(zqsd.droite)) {
-    deplacer(1, 0);
+    seTournerSeulement ? seTourner(1, 0) : deplacer(1, 0);
   } else if (Phaser.Input.Keyboard.JustDown(toucheE) || Phaser.Input.Keyboard.JustDown(toucheF)) {
     interagir();
   } else if (Phaser.Input.Keyboard.JustDown(toucheEspace)) {
@@ -193,22 +210,31 @@ function updateGame() {
   }
 }
 
-// Déplace le joueur d'une case, seulement si la case visée n'est pas un mur.
-// Un déplacement refusé (mur) ne consomme pas de tour.
-function deplacer(dx, dy) {
-  var nouvelleX = grilleX + dx;
-  var nouvelleY = grilleY + dy;
-
-  if (!caseLibre(nouvelleX, nouvelleY)) {
-    return;
-  }
-
+// Tourne le joueur dans une direction sans le déplacer ni consommer de
+// tour — c'est cette direction que suivra le prochain tir.
+function seTourner(dx, dy) {
   // Gauche/droite : on retourne le sprite plutôt que de dessiner un
   // deuxième dessin, le perso n'ayant pas de détail asymétrique.
   if (dx !== 0) {
     joueur.setFlipX(dx < 0);
   }
   direction = { x: dx, y: dy };
+}
+
+// Déplace le joueur d'une case, seulement si la case visée n'est pas un mur.
+// Un déplacement refusé (mur) ne consomme pas de tour — mais le joueur se
+// retourne quand même dans cette direction (gratuit), pour pouvoir viser un
+// mur qu'il ne peut pas traverser sans avoir à en faire le tour pour s'y
+// tourner face.
+function deplacer(dx, dy) {
+  seTourner(dx, dy);
+
+  var nouvelleX = grilleX + dx;
+  var nouvelleY = grilleY + dy;
+
+  if (!caseLibre(nouvelleX, nouvelleY)) {
+    return;
+  }
 
   grilleX = nouvelleX;
   grilleY = nouvelleY;
@@ -584,6 +610,7 @@ function animerTir(colCible, rowCible) {
   var distance = Math.abs(colCible - grilleX) + Math.abs(rowCible - grilleY);
 
   var balle = sceneJeu.add.circle(xDepart, yDepart, 1, COULEUR_TIR);
+  masquerAuHUD(balle);
   enDeplacement = true;
 
   sceneJeu.tweens.add({
