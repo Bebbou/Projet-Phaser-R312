@@ -10,6 +10,19 @@ var ZOOM = 4; // les tuiles font 8px, on zoome pour que ce soit jouable à l'éc
 var SAUT_DUREE = 140; // ms, durée du petit saut entre deux cases
 var SAUT_HAUTEUR = 3; // px, hauteur du rebond
 
+// La liste des salles du niveau, dans l'ordre. Pour en ajouter une, il
+// suffit d'ajouter une entrée ici et de dessiner la carte correspondante
+// dans Tiled (mêmes noms de calques que les autres : sol, mur, objectifs,
+// pieges, leviers, portes, ennemis, sortie, depart).
+var SALLES = [
+  { cle: 'salle1', fichier: 'src/assets/maps/map.json' },
+  { cle: 'salle2', fichier: 'src/assets/maps/map2.json' },
+  { cle: 'salle3', fichier: 'src/assets/maps/map3.json' },
+  { cle: 'salle4', fichier: 'src/assets/maps/map4.json' }
+];
+var indexSalle = 0;
+var sortie; // { x, y } case de sortie de la salle courante, ou null si absente
+
 var joueur;
 var indicateurDirection;
 var grilleX = 5;
@@ -34,8 +47,10 @@ var COULEUR_TROU = 0x000000;
 var DUREE_EFFONDREMENT = 220; // ms
 
 var joueurMort = false;
+var joueurAGagne = false;
 var toucheR;
 var texteMort;
+var texteVictoire;
 
 var leviers = {}; // clé "col,row" -> { x, y, actif, sprite }
 
@@ -47,10 +62,8 @@ var PV_INITIAL = 3;
 var pv = PV_INITIAL;
 var camHUD;
 
-var texteHUD; // un seul texte multi-lignes pour tout le HUD (temps, PV, objectifs, tour)
+var texteHUD; // un seul texte multi-lignes pour tout le HUD (PV, objectifs, tour)
 var fondHUD; // rectangle semi-transparent derrière le texte, pour la lisibilité
-var tempsDebut; // this.time.now au lancement de la partie, sert de référence au chrono
-var tempsFinPartie; // figé à la mort du joueur pour arrêter le chrono
 
 // Direction où le joueur "regarde", mise à jour à chaque déplacement.
 // Ne correspond à aucun sprite différent (pas de sprite de dos) — c'est une
@@ -75,24 +88,32 @@ function preloadGame() {
   this.load.image('porte', 'src/assets/props/porte.png');
   this.load.image('ennemi1', 'src/assets/characters/enemie1.png');
   this.load.image('ennemi2', 'src/assets/characters/enemie2.png');
-  this.load.tilemapTiledJSON('salle1', 'src/assets/maps/map.json');
+  for (var i = 0; i < SALLES.length; i++) {
+    this.load.tilemapTiledJSON(SALLES[i].cle, SALLES[i].fichier);
+  }
 }
 
-function createGame() {
+// data.indexSalle : quelle salle charger (absent = on repart de la salle 1).
+// data.conserverPV : si vrai, on garde les PV actuels au lieu de les
+// remettre au max — c'est le cas en passant à la salle suivante, mais pas
+// en recommençant après une mort.
+function createGame(data) {
   sceneJeu = this;
   camera = this.cameras.main;
+  data = data || {};
 
-  // Remise à zéro de l'état : la scène peut être relancée (mort du joueur),
-  // et ces variables sont globales au script donc elles survivraient sinon
-  // d'une partie à l'autre.
+  indexSalle = data.indexSalle !== undefined ? data.indexSalle : 0;
+
+  // Remise à zéro de l'état : la scène peut être relancée (mort du joueur,
+  // salle suivante), et ces variables sont globales au script donc elles
+  // survivraient sinon d'une partie à l'autre.
   grilleX = 5;
   grilleY = 5;
   numeroTour = 0;
   enDeplacement = false;
   joueurMort = false;
-  pv = PV_INITIAL;
-  tempsDebut = this.time.now;
-  tempsFinPartie = null;
+  joueurAGagne = false;
+  pv = data.conserverPV ? pv : PV_INITIAL;
   direction = { x: 0, y: 1 };
   objectifs = {};
   nbObjectifsRestants = 0;
@@ -101,11 +122,13 @@ function createGame() {
   leviers = {};
   portes = {};
   ennemis = {};
+  sortie = null;
 
   // La carte : calques "sol" (décor), "mur" (bloque le déplacement),
-  // "objectifs", "pieges", "leviers" et "portes" (données de gameplay,
-  // jamais affichés tels quels — on dessine nos propres marqueurs par-dessus).
-  carte = this.make.tilemap({ key: 'salle1' });
+  // "objectifs", "pieges", "leviers", "portes", "ennemis", "sortie" et
+  // "depart" (données de gameplay, jamais affichés tels quels — on dessine
+  // nos propres marqueurs par-dessus).
+  carte = this.make.tilemap({ key: SALLES[indexSalle].cle });
   var tileset = carte.addTilesetImage('colored_tilemap_packed', 'tileset');
   carte.createLayer('sol', tileset, 0, 0);
   calqueMur = carte.createLayer('mur', tileset, 0, 0);
@@ -114,6 +137,8 @@ function createGame() {
   chargerLeviers();
   chargerPortes();
   chargerEnnemis();
+  chargerSortie();
+  chargerDepart();
   dessinerGrille();
   dessinerObjectifs();
 
@@ -185,19 +210,13 @@ function creerHUD() {
   }));
 }
 
-// Reconstruit le texte du panneau HUD à partir de l'état courant (temps,
-// PV, objectifs restants, tour). Appelée à chaque frame plutôt qu'à chaque
-// changement individuel : plus simple, et c'est de toute façon nécessaire
-// pour faire avancer le chrono en continu.
+// Reconstruit le texte du panneau HUD à partir de l'état courant (PV,
+// objectifs restants, tour). Appelée à chaque frame plutôt qu'à chaque
+// changement individuel : plus simple, pas besoin de la rappeler à la main
+// depuis chaque endroit du code qui modifie l'une de ces valeurs.
 function majTexteHUD() {
-  var fin = tempsFinPartie !== null ? tempsFinPartie : sceneJeu.time.now;
-  var secondes = Math.floor((fin - tempsDebut) / 1000);
-  var mm = Math.floor(secondes / 60);
-  var ss = secondes % 60;
-  var chrono = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
-
   texteHUD.setText(
-    'Temps : ' + chrono + '\n' +
+    'Salle : ' + (indexSalle + 1) + ' / ' + SALLES.length + '\n' +
     'PV : ' + pv + '\n' +
     'Objectifs : ' + nbObjectifsRestants + ' restant' + (nbObjectifsRestants !== 1 ? 's' : '') + '\n' +
     'Tour : ' + numeroTour
@@ -256,9 +275,14 @@ function updateGame() {
   majIndicateurDirection();
   majTexteHUD();
 
-  if (joueurMort) {
+  // Mort ou victoire : entrées bloquées, seul R permet de recommencer une
+  // partie complète depuis la salle 1. On passe explicitement indexSalle: 0
+  // et conserverPV: false — scene.restart() sans données ne repart PAS à
+  // zéro comme on pourrait le croire : Phaser réutilise les dernières
+  // données passées au restart précédent (celles du passage de salle).
+  if (joueurMort || joueurAGagne) {
     if (Phaser.Input.Keyboard.JustDown(toucheR)) {
-      sceneJeu.scene.restart();
+      sceneJeu.scene.restart({ indexSalle: 0, conserverPV: false });
     }
     return;
   }
@@ -317,6 +341,9 @@ function deplacer(dx, dy) {
   grilleY = nouvelleY;
   verifierObjectif();
   verifierPiege();
+  if (verifierSortie()) {
+    return; // la salle change, inutile d'animer un déplacement dans l'ancienne
+  }
   animerDeplacement();
 }
 
@@ -631,6 +658,61 @@ function ouvrirPortes() {
   }
 }
 
+// Lit le calque "sortie" de la carte Tiled (optionnel) : au plus une case
+// marque la sortie de la salle. L'atteindre fait passer à la salle
+// suivante (voir verifierSortie). Si le calque est absent ou vide, la
+// salle n'a pas de sortie (rien ne se passe en marchant dessus).
+function chargerSortie() {
+  var calque = carte.getLayer('sortie');
+  if (!calque) {
+    return;
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        sortie = { x: col, y: row };
+        return;
+      }
+    }
+  }
+}
+
+// Lit le calque "depart" de la carte Tiled (optionnel) : au plus une case
+// marque le point d'apparition du joueur dans cette salle. Absent, le
+// joueur apparaît sur la case par défaut (5,5) fixée plus haut.
+function chargerDepart() {
+  var calque = carte.getLayer('depart');
+  if (!calque) {
+    return;
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        grilleX = col;
+        grilleY = row;
+        return;
+      }
+    }
+  }
+}
+
+// Si le joueur vient d'arriver sur la case de sortie, passe à la salle
+// suivante (les PV sont conservés), ou termine le niveau si c'était la
+// dernière. Retourne vrai si la salle est en train de changer.
+function verifierSortie() {
+  if (!sortie || grilleX !== sortie.x || grilleY !== sortie.y) {
+    return false;
+  }
+  if (indexSalle + 1 < SALLES.length) {
+    sceneJeu.scene.restart({ indexSalle: indexSalle + 1, conserverPV: true });
+  } else {
+    gagner();
+  }
+  return true;
+}
+
 // Touche E/F : actionne le premier levier trouvé adjacent au joueur (haut,
 // bas, gauche, droite). Coûte un tour, comme un déplacement.
 function interagir() {
@@ -744,13 +826,13 @@ function subirDegat(quantite) {
 }
 
 // Mort du joueur : bloque les entrées et affiche un message d'invite à
-// recommencer. Pas encore de vrai écran de game over (viendra avec le HUD).
+// recommencer depuis la salle 1 (voir updateGame, qui appelle scene.restart()
+// sans données quand joueurMort est vrai).
 function mourir() {
   if (joueurMort) {
     return;
   }
   joueurMort = true;
-  tempsFinPartie = sceneJeu.time.now;
   joueur.setTint(0xff0000);
 
   texteMort = sceneJeu.add.text(
@@ -760,6 +842,20 @@ function mourir() {
     { fontSize: '20px', color: '#ffffff', align: 'center' }
   ).setOrigin(0.5);
   camera.ignore(texteMort); // visible seulement via la caméra HUD (voir creerHUD)
+}
+
+// Victoire : le joueur a atteint la sortie de la dernière salle. Même
+// principe que mourir() (entrées bloquées, R pour recommencer).
+function gagner() {
+  joueurAGagne = true;
+
+  texteVictoire = sceneJeu.add.text(
+    sceneJeu.scale.width / 2,
+    sceneJeu.scale.height / 2,
+    'Bravo, niveau terminé !\nAppuie sur R pour recommencer',
+    { fontSize: '20px', color: '#ffffff', align: 'center' }
+  ).setOrigin(0.5);
+  camera.ignore(texteVictoire);
 }
 
 // Lit le calque "ennemis" de la carte Tiled (s'il existe) : chaque case non
@@ -908,8 +1004,15 @@ function deplacerEnnemiVersJoueur(ennemi, cle) {
   }
 
   for (var i = 0; i < tentatives.length; i++) {
-    var col = ennemi.x + tentatives[i][0];
-    var row = ennemi.y + tentatives[i][1];
+    var pas = tentatives[i];
+    var col = ennemi.x + pas[0];
+    var row = ennemi.y + pas[1];
+
+    // Comme le joueur : on retourne le sprite plutôt que d'avoir un dessin
+    // séparé pour chaque sens horizontal.
+    if (pas[0] !== 0) {
+      ennemi.sprite.setFlipX(pas[0] < 0);
+    }
 
     if (col === grilleX && row === grilleY) {
       animerAttaqueEnnemi(ennemi.x, ennemi.y);
