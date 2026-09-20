@@ -194,7 +194,7 @@ function majIndicateurDirection() {
   // flèche se confondait avec son sprite. Un léger décalage (sans aller
   // jusqu'au bord de la case) la sort juste assez du personnage pour rester
   // lisible, sans paraître détachée de lui.
-  var DECALAGE = 5;
+  var DECALAGE = 7;
   var cx = joueur.x + direction.x * DECALAGE;
   var cy = joueur.y - TAILLE_TUILE / 2 + direction.y * DECALAGE; // le joueur est ancré par le bas
   var taille = 2;
