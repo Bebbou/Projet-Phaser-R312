@@ -43,6 +43,19 @@ var portes = {}; // clé "col,row" -> { x, y, ouverte, sprite }
 
 var toucheE, toucheF;
 
+var PV_INITIAL = 3;
+var pv = PV_INITIAL;
+var textePV;
+
+// Direction où le joueur "regarde", mise à jour à chaque déplacement.
+// Ne correspond à aucun sprite différent (pas de sprite de dos) — c'est une
+// donnée purement logique qui sert à savoir où part le tir.
+var direction = { x: 0, y: 1 }; // vers le bas par défaut
+
+var toucheEspace;
+var DUREE_TIR = 25; // ms par case parcourue par le projectile
+var COULEUR_TIR = 0xffe066;
+
 function preloadGame() {
   this.load.image('tileset', 'src/assets/tilesets/colored_tilemap_packed.png');
   this.load.image('player', 'src/assets/characters/player.png');
@@ -64,6 +77,8 @@ function createGame() {
   numeroTour = 0;
   enDeplacement = false;
   joueurMort = false;
+  pv = PV_INITIAL;
+  direction = { x: 0, y: 1 };
   objectifs = {};
   nbObjectifsRestants = 0;
   grapheObjectifs = undefined;
@@ -118,6 +133,7 @@ function createGame() {
   // du remapping qu'on fait pour Z/Q (voir plus haut).
   toucheE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
   toucheF = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+  toucheEspace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
   // Le HUD est créé en dernier : la caméra dédiée (voir plus bas) capture
   // un instantané de "tout ce qui existe déjà" pour l'ignorer, donc tout
@@ -135,11 +151,18 @@ function creerHUD() {
     fontSize: '16px',
     color: '#ffffff'
   });
+  textePV = sceneJeu.add.text(4, 24, 'PV : ' + pv, {
+    fontSize: '16px',
+    color: '#ffffff'
+  });
 
-  camera.ignore(texteTour);
+  var elementsHUD = [texteTour, textePV];
+  elementsHUD.forEach(function (objet) {
+    camera.ignore(objet);
+  });
   var camHUD = sceneJeu.cameras.add(0, 0, sceneJeu.scale.width, sceneJeu.scale.height);
   camHUD.ignore(sceneJeu.children.list.filter(function (objet) {
-    return objet !== texteTour;
+    return elementsHUD.indexOf(objet) === -1;
   }));
 }
 
@@ -165,6 +188,8 @@ function updateGame() {
     deplacer(1, 0);
   } else if (Phaser.Input.Keyboard.JustDown(toucheE) || Phaser.Input.Keyboard.JustDown(toucheF)) {
     interagir();
+  } else if (Phaser.Input.Keyboard.JustDown(toucheEspace)) {
+    tirer();
   }
 }
 
@@ -183,6 +208,7 @@ function deplacer(dx, dy) {
   if (dx !== 0) {
     joueur.setFlipX(dx < 0);
   }
+  direction = { x: dx, y: dy };
 
   grilleX = nouvelleX;
   grilleY = nouvelleY;
@@ -504,6 +530,86 @@ function interagir() {
       finDuTour();
       return;
     }
+  }
+}
+
+// Une case bloque un tir si elle est hors carte, contient un mur, ou une
+// porte encore fermée. Contrairement au déplacement, un tir n'est pas
+// bloqué par un levier ou une tuile objectif — le projectile passe dessus.
+function caseBloquePourTir(col, row) {
+  if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
+    return true;
+  }
+  var tuileMur = calqueMur.getTileAt(col, row);
+  if (tuileMur !== null && tuileMur !== undefined) {
+    return true;
+  }
+  var porte = portes[col + ',' + row];
+  if (porte && !porte.ouverte) {
+    return true;
+  }
+  return false;
+}
+
+// Touche Espace : tire en ligne droite dans la direction où le joueur
+// regarde (sa dernière direction de déplacement). Le tir avance case par
+// case jusqu'à un mur/porte fermée ou le bord de la carte. Coûte un tour.
+// Pas encore de dégâts sur les ennemis : ça viendra avec leur ajout.
+function tirer() {
+  var col = grilleX;
+  var row = grilleY;
+
+  while (true) {
+    var prochainCol = col + direction.x;
+    var prochainRow = row + direction.y;
+    if (caseBloquePourTir(prochainCol, prochainRow)) {
+      break;
+    }
+    col = prochainCol;
+    row = prochainRow;
+  }
+
+  animerTir(col, row);
+}
+
+// Anime un petit projectile qui voyage du joueur jusqu'à la case touchée,
+// puis consomme un tour. La vitesse dépend de la distance parcourue (une
+// case = DUREE_TIR ms) pour que le tir reste instantané visuellement même
+// sur une longue portée, sans être un téléport brutal sur une courte.
+function animerTir(colCible, rowCible) {
+  var xDepart = grilleX * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var yDepart = grilleY * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var xArrivee = colCible * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var yArrivee = rowCible * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var distance = Math.abs(colCible - grilleX) + Math.abs(rowCible - grilleY);
+
+  var balle = sceneJeu.add.circle(xDepart, yDepart, 1, COULEUR_TIR);
+  enDeplacement = true;
+
+  sceneJeu.tweens.add({
+    targets: balle,
+    x: xArrivee,
+    y: yArrivee,
+    duration: Math.max(distance, 1) * DUREE_TIR,
+    ease: 'Linear',
+    onComplete: function () {
+      balle.destroy();
+      finDuTour();
+      enDeplacement = false;
+    }
+  });
+}
+
+// Retire des PV au joueur ; à 0, il meurt. Même mort que dans le trou, un
+// seul système de game over pour les deux causes.
+function subirDegat(quantite) {
+  pv -= quantite;
+  if (pv < 0) {
+    pv = 0;
+  }
+  textePV.setText('PV : ' + pv);
+  if (pv <= 0) {
+    mourir();
   }
 }
 
