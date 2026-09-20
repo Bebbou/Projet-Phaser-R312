@@ -11,6 +11,7 @@ var SAUT_DUREE = 140; // ms, durée du petit saut entre deux cases
 var SAUT_HAUTEUR = 3; // px, hauteur du rebond
 
 var joueur;
+var indicateurDirection;
 var grilleX = 5;
 var grilleY = 5;
 var clavier;
@@ -117,6 +118,12 @@ function createGame() {
   joueur.x = grilleX * TAILLE_TUILE + TAILLE_TUILE / 2;
   joueur.y = (grilleY + 1) * TAILLE_TUILE;
 
+  // Petite flèche qui suit le joueur et pointe dans sa direction de visée —
+  // le sprite ne change pas entre haut/bas (pas de sprite de dos), donc sans
+  // ça impossible de savoir où partira le prochain tir.
+  indicateurDirection = this.add.triangle(0, 0, -2, -2, -2, 2, 3, 0, COULEUR_TIR);
+  majIndicateurDirection();
+
   clavier = this.input.keyboard.createCursorKeys();
 
   // Le code clavier du navigateur correspond à la position physique de la
@@ -178,7 +185,21 @@ function masquerAuHUD(objet) {
   }
 }
 
+// Repositionne la petite flèche de visée contre le joueur, dans sa direction
+// actuelle. Appelée à chaque frame : ça la fait suivre le joueur même
+// pendant l'animation du petit saut, sans avoir à la relier à la main à
+// chaque endroit où la position ou la direction changent.
+function majIndicateurDirection() {
+  var centreX = joueur.x;
+  var centreY = joueur.y - TAILLE_TUILE / 2; // le joueur est ancré par le bas
+  indicateurDirection.x = centreX + direction.x * (TAILLE_TUILE / 2 + 2);
+  indicateurDirection.y = centreY + direction.y * (TAILLE_TUILE / 2 + 2);
+  indicateurDirection.setRotation(Math.atan2(direction.y, direction.x));
+}
+
 function updateGame() {
+  majIndicateurDirection();
+
   if (joueurMort) {
     if (Phaser.Input.Keyboard.JustDown(toucheR)) {
       sceneJeu.scene.restart();
