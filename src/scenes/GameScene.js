@@ -37,9 +37,19 @@ var joueurMort = false;
 var toucheR;
 var texteMort;
 
+var leviers = {}; // clé "col,row" -> { x, y, actif, sprite }
+
+var portes = {}; // clé "col,row" -> { x, y, ouverte }
+var graphePortes;
+var COULEUR_PORTE = 0x8b5a2b;
+
+var toucheE, toucheF;
+
 function preloadGame() {
   this.load.image('tileset', 'src/assets/tilesets/colored_tilemap_packed.png');
   this.load.image('player', 'src/assets/characters/player.png');
+  this.load.image('levier_inactif', 'src/assets/props/levierROUG.png');
+  this.load.image('levier_actif', 'src/assets/props/levierVERT.png');
   this.load.tilemapTiledJSON('salle1', 'src/assets/maps/map.json');
 }
 
@@ -60,19 +70,25 @@ function createGame() {
   grapheObjectifs = undefined;
   pieges = {};
   graphePieges = undefined;
+  leviers = {};
+  portes = {};
+  graphePortes = undefined;
 
   // La carte : calques "sol" (décor), "mur" (bloque le déplacement),
-  // "objectifs" et "pieges" (données de gameplay, jamais affichés tels
-  // quels — on dessine nos propres marqueurs par-dessus).
+  // "objectifs", "pieges", "leviers" et "portes" (données de gameplay,
+  // jamais affichés tels quels — on dessine nos propres marqueurs par-dessus).
   carte = this.make.tilemap({ key: 'salle1' });
   var tileset = carte.addTilesetImage('colored_tilemap_packed', 'tileset');
   carte.createLayer('sol', tileset, 0, 0);
   calqueMur = carte.createLayer('mur', tileset, 0, 0);
   chargerObjectifs();
   chargerPieges();
+  chargerLeviers();
+  chargerPortes();
   dessinerGrille();
   dessinerObjectifs();
   dessinerPieges();
+  dessinerPortes();
 
   camera.setZoom(ZOOM);
   // La salle est plus petite que l'écran (zoomée), donc on la centre une
@@ -101,6 +117,10 @@ function createGame() {
     droite: Phaser.Input.Keyboard.KeyCodes.D
   });
   toucheR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+  // E et F sont à la même position physique en AZERTY et QWERTY, pas besoin
+  // du remapping qu'on fait pour Z/Q (voir plus haut).
+  toucheE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+  toucheF = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
 
   // Le HUD est créé en dernier : la caméra dédiée (voir plus bas) capture
   // un instantané de "tout ce qui existe déjà" pour l'ignorer, donc tout
@@ -146,6 +166,8 @@ function updateGame() {
     deplacer(-1, 0);
   } else if (Phaser.Input.Keyboard.JustDown(clavier.right) || Phaser.Input.Keyboard.JustDown(zqsd.droite)) {
     deplacer(1, 0);
+  } else if (Phaser.Input.Keyboard.JustDown(toucheE) || Phaser.Input.Keyboard.JustDown(toucheF)) {
+    interagir();
   }
 }
 
@@ -188,10 +210,10 @@ function dessinerGrille() {
 }
 
 // Une case est libre si elle est dans la carte, que le calque "mur" n'y a
-// pas de tuile, et qu'elle n'est pas une tuile objectif déjà coloriée
-// (redevient infranchissable une fois coloriée). Important de vérifier les
-// limites : une case hors carte n'a pas de tuile non plus, donc sans ce
-// test elle serait considérée "libre".
+// pas de tuile, qu'elle n'est pas une tuile objectif déjà coloriée (redevient
+// infranchissable une fois coloriée), et qu'elle n'est pas une porte encore
+// fermée. Important de vérifier les limites : une case hors carte n'a pas de
+// tuile non plus, donc sans ce test elle serait considérée "libre".
 function caseLibre(col, row) {
   if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
     return false;
@@ -202,6 +224,10 @@ function caseLibre(col, row) {
   }
   var objectif = objectifs[col + ',' + row];
   if (objectif && objectif.colore) {
+    return false;
+  }
+  var porte = portes[col + ',' + row];
+  if (porte && !porte.ouverte) {
     return false;
   }
   return true;
@@ -262,9 +288,7 @@ function verifierObjectif() {
   dessinerObjectifs();
 
   if (nbObjectifsRestants === 0) {
-    // Toutes les tuiles objectif sont coloriées : l'ouverture de la porte
-    // de sortie viendra se brancher ici (prochaine étape du projet).
-    console.log('Toutes les tuiles objectif sont coloriées !');
+    ouvrirPortes(); // toutes les tuiles objectif coloriées : la sortie s'ouvre
   }
 }
 
@@ -395,6 +419,100 @@ function verifierPiege() {
   var piege = pieges[grilleX + ',' + grilleY];
   if (piege && piege.effondre) {
     mourir();
+  }
+}
+
+// Lit le calque "leviers" de la carte Tiled (s'il existe) : chaque case non
+// vide devient un levier activable via E/F en étant adjacent. Sprite rouge
+// tant qu'inactif, vert une fois actionné (voir interagir()).
+function chargerLeviers() {
+  var calque = carte.getLayer('leviers');
+  if (!calque) {
+    return;
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        var sprite = sceneJeu.add.image(
+          col * TAILLE_TUILE + TAILLE_TUILE / 2,
+          row * TAILLE_TUILE + TAILLE_TUILE / 2,
+          'levier_inactif'
+        );
+        leviers[col + ',' + row] = { x: col, y: row, actif: false, sprite: sprite };
+      }
+    }
+  }
+}
+
+// Lit le calque "portes" de la carte Tiled (s'il existe) : chaque case non
+// vide devient une porte fermée par défaut, qui bloque le déplacement
+// jusqu'à ce qu'un levier soit actionné ou que tous les objectifs le soient.
+function chargerPortes() {
+  var calque = carte.getLayer('portes');
+  if (!calque) {
+    return;
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        portes[col + ',' + row] = { x: col, y: row, ouverte: false };
+      }
+    }
+  }
+}
+
+// Redessine les portes : ne dessine que celles encore fermées (une porte
+// ouverte redevient une case de sol normale, sans marqueur).
+function dessinerPortes() {
+  if (!graphePortes) {
+    graphePortes = sceneJeu.add.graphics();
+  }
+  graphePortes.clear();
+
+  for (var cle in portes) {
+    var p = portes[cle];
+    if (p.ouverte) {
+      continue;
+    }
+    var px = p.x * TAILLE_TUILE;
+    var py = p.y * TAILLE_TUILE;
+    graphePortes.fillStyle(COULEUR_PORTE, 0.9);
+    graphePortes.fillRect(px, py, TAILLE_TUILE, TAILLE_TUILE);
+  }
+}
+
+// Ouvre toutes les portes de la salle (un seul circuit, pas de liaison
+// levier <-> porte précise pour l'instant — suffisant tant qu'il n'y a
+// qu'une salle et peu de portes).
+function ouvrirPortes() {
+  for (var cle in portes) {
+    portes[cle].ouverte = true;
+  }
+  dessinerPortes();
+}
+
+// Touche E/F : actionne le premier levier trouvé adjacent au joueur (haut,
+// bas, gauche, droite). Coûte un tour, comme un déplacement.
+function interagir() {
+  var casesAdjacentes = [
+    [grilleX, grilleY - 1],
+    [grilleX, grilleY + 1],
+    [grilleX - 1, grilleY],
+    [grilleX + 1, grilleY]
+  ];
+
+  for (var i = 0; i < casesAdjacentes.length; i++) {
+    var cle = casesAdjacentes[i][0] + ',' + casesAdjacentes[i][1];
+    var levier = leviers[cle];
+    if (levier && !levier.actif) {
+      levier.actif = true;
+      levier.sprite.setTexture('levier_actif');
+      ouvrirPortes();
+      finDuTour();
+      return;
+    }
   }
 }
 
