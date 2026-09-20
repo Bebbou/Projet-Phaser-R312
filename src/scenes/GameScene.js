@@ -121,7 +121,7 @@ function createGame() {
   // Petite flèche qui suit le joueur et pointe dans sa direction de visée —
   // le sprite ne change pas entre haut/bas (pas de sprite de dos), donc sans
   // ça impossible de savoir où partira le prochain tir.
-  indicateurDirection = this.add.triangle(0, 0, -2, -2, -2, 2, 3, 0, COULEUR_TIR);
+  indicateurDirection = this.add.graphics();
   majIndicateurDirection();
 
   clavier = this.input.keyboard.createCursorKeys();
@@ -190,11 +190,36 @@ function masquerAuHUD(objet) {
 // pendant l'animation du petit saut, sans avoir à la relier à la main à
 // chaque endroit où la position ou la direction changent.
 function majIndicateurDirection() {
-  var centreX = joueur.x;
-  var centreY = joueur.y - TAILLE_TUILE / 2; // le joueur est ancré par le bas
-  indicateurDirection.x = centreX + direction.x * (TAILLE_TUILE / 2 + 2);
-  indicateurDirection.y = centreY + direction.y * (TAILLE_TUILE / 2 + 2);
-  indicateurDirection.setRotation(Math.atan2(direction.y, direction.x));
+  // Petit décalage dans la direction visée : pile centré sur le joueur, la
+  // flèche se confondait avec son sprite. Un léger décalage (sans aller
+  // jusqu'au bord de la case) la sort juste assez du personnage pour rester
+  // lisible, sans paraître détachée de lui.
+  var DECALAGE = 5;
+  var cx = joueur.x + direction.x * DECALAGE;
+  var cy = joueur.y - TAILLE_TUILE / 2 + direction.y * DECALAGE; // le joueur est ancré par le bas
+  var taille = 2;
+
+  // Triangle dessiné à la main pour chaque direction plutôt que pivoté :
+  // une forme pivotée par Phaser ne tourne pas forcément pile autour de son
+  // centre visuel, ce qui donnait un petit décalage disgracieux au
+  // changement de direction. Là, les 4 formes sont symétriques par
+  // construction, centrées sur le même point.
+  var points;
+  if (direction.x === 1) {
+    points = [cx - taille, cy - taille, cx - taille, cy + taille, cx + taille, cy];
+  } else if (direction.x === -1) {
+    points = [cx + taille, cy - taille, cx + taille, cy + taille, cx - taille, cy];
+  } else if (direction.y === 1) {
+    points = [cx - taille, cy - taille, cx + taille, cy - taille, cx, cy + taille];
+  } else {
+    points = [cx - taille, cy + taille, cx + taille, cy + taille, cx, cy - taille];
+  }
+
+  // Pas de contour : il accentuait l'effet "forme vectorielle" qui jure
+  // avec le pixel art. Juste un aplat transparent, discret.
+  indicateurDirection.clear();
+  indicateurDirection.fillStyle(COULEUR_TIR, 0.45);
+  indicateurDirection.fillTriangle(points[0], points[1], points[2], points[3], points[4], points[5]);
 }
 
 function updateGame() {
