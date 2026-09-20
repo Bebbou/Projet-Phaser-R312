@@ -22,7 +22,6 @@ var calqueMur;
 var sceneJeu; // référence à la scène, nécessaire pour lancer des tweens
 var enDeplacement = false; // bloque les entrées pendant le petit saut
 var numeroTour = 0;
-var texteTour;
 var objectifs = {}; // clé "col,row" -> { x, y, colore }
 var nbObjectifsRestants = 0;
 var grapheObjectifs;
@@ -46,8 +45,12 @@ var toucheE, toucheF;
 
 var PV_INITIAL = 3;
 var pv = PV_INITIAL;
-var textePV;
 var camHUD;
+
+var texteHUD; // un seul texte multi-lignes pour tout le HUD (temps, PV, objectifs, tour)
+var fondHUD; // rectangle semi-transparent derrière le texte, pour la lisibilité
+var tempsDebut; // this.time.now au lancement de la partie, sert de référence au chrono
+var tempsFinPartie; // figé à la mort du joueur pour arrêter le chrono
 
 // Direction où le joueur "regarde", mise à jour à chaque déplacement.
 // Ne correspond à aucun sprite différent (pas de sprite de dos) — c'est une
@@ -88,6 +91,8 @@ function createGame() {
   enDeplacement = false;
   joueurMort = false;
   pv = PV_INITIAL;
+  tempsDebut = this.time.now;
+  tempsFinPartie = null;
   direction = { x: 0, y: 1 };
   objectifs = {};
   nbObjectifsRestants = 0;
@@ -157,22 +162,20 @@ function createGame() {
   creerHUD();
 }
 
-// Compteur de tour temporaire (fera partie du vrai HUD plus tard).
 // La caméra de jeu est zoomée x4 : un texte fixé avec setScrollFactor(0) se
 // retrouve mal placé/invisible dans ce cas (bug connu de Phaser avec zoom
 // != 1). La solution fiable : une deuxième caméra dédiée au HUD, à zoom
-// normal, qui ne voit que ce texte — la caméra de jeu l'ignore.
+// normal, qui ne voit que le panneau créé ici — la caméra de jeu l'ignore.
 function creerHUD() {
-  texteTour = sceneJeu.add.text(4, 4, 'Tour : 0', {
-    fontSize: '16px',
-    color: '#ffffff'
+  fondHUD = sceneJeu.add.rectangle(0, 0, 116, 76, 0x000000, 0.45).setOrigin(0, 0);
+  texteHUD = sceneJeu.add.text(8, 6, '', {
+    fontSize: '14px',
+    color: '#ffffff',
+    lineSpacing: 6
   });
-  textePV = sceneJeu.add.text(4, 24, 'PV : ' + pv, {
-    fontSize: '16px',
-    color: '#ffffff'
-  });
+  majTexteHUD();
 
-  var elementsHUD = [texteTour, textePV];
+  var elementsHUD = [fondHUD, texteHUD];
   elementsHUD.forEach(function (objet) {
     camera.ignore(objet);
   });
@@ -180,6 +183,25 @@ function creerHUD() {
   camHUD.ignore(sceneJeu.children.list.filter(function (objet) {
     return elementsHUD.indexOf(objet) === -1;
   }));
+}
+
+// Reconstruit le texte du panneau HUD à partir de l'état courant (temps,
+// PV, objectifs restants, tour). Appelée à chaque frame plutôt qu'à chaque
+// changement individuel : plus simple, et c'est de toute façon nécessaire
+// pour faire avancer le chrono en continu.
+function majTexteHUD() {
+  var fin = tempsFinPartie !== null ? tempsFinPartie : sceneJeu.time.now;
+  var secondes = Math.floor((fin - tempsDebut) / 1000);
+  var mm = Math.floor(secondes / 60);
+  var ss = secondes % 60;
+  var chrono = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+
+  texteHUD.setText(
+    'Temps : ' + chrono + '\n' +
+    'PV : ' + pv + '\n' +
+    'Objectifs : ' + nbObjectifsRestants + ' restant' + (nbObjectifsRestants !== 1 ? 's' : '') + '\n' +
+    'Tour : ' + numeroTour
+  );
 }
 
 // À appeler pour tout objet créé PENDANT la partie (balle, futur ennemi...),
@@ -232,6 +254,7 @@ function majIndicateurDirection() {
 
 function updateGame() {
   majIndicateurDirection();
+  majTexteHUD();
 
   if (joueurMort) {
     if (Phaser.Input.Keyboard.JustDown(toucheR)) {
@@ -447,7 +470,6 @@ function finDuTour() {
   }
 
   numeroTour++;
-  texteTour.setText('Tour : ' + numeroTour);
   decrementerPieges();
 
   if (joueurMort) {
@@ -716,7 +738,6 @@ function subirDegat(quantite) {
   if (pv < 0) {
     pv = 0;
   }
-  textePV.setText('PV : ' + pv);
   if (pv <= 0) {
     mourir();
   }
@@ -729,6 +750,7 @@ function mourir() {
     return;
   }
   joueurMort = true;
+  tempsFinPartie = sceneJeu.time.now;
   joueur.setTint(0xff0000);
 
   texteMort = sceneJeu.add.text(
