@@ -58,6 +58,12 @@ var toucheEspace;
 var DUREE_TIR = 25; // ms par case parcourue par le projectile
 var COULEUR_TIR = 0xffe066;
 
+var ennemis = {}; // clé "col,row" -> { x, y, sprite }
+var COULEUR_ENNEMI = 0x9b59b6;
+var DEGAT_ENNEMI = 1;
+var COULEUR_ATTAQUE_ENNEMI = 0xe74c3c;
+var DUREE_ATTAQUE_ENNEMI = 120;
+
 function preloadGame() {
   this.load.image('tileset', 'src/assets/tilesets/colored_tilemap_packed.png');
   this.load.image('player', 'src/assets/characters/player.png');
@@ -88,6 +94,7 @@ function createGame() {
   graphePieges = undefined;
   leviers = {};
   portes = {};
+  ennemis = {};
 
   // La carte : calques "sol" (décor), "mur" (bloque le déplacement),
   // "objectifs", "pieges", "leviers" et "portes" (données de gameplay,
@@ -100,6 +107,7 @@ function createGame() {
   chargerPieges();
   chargerLeviers();
   chargerPortes();
+  chargerEnnemis();
   dessinerGrille();
   dessinerObjectifs();
   dessinerPieges();
@@ -330,6 +338,9 @@ function caseLibre(col, row) {
   if (leviers[col + ',' + row]) {
     return false;
   }
+  if (ennemis[col + ',' + row]) {
+    return false;
+  }
   return true;
 }
 
@@ -427,9 +438,9 @@ function animerDeplacement() {
   });
 }
 
-// Appelée une fois l'action du joueur terminée (l'animation de saut finie).
-// C'est ici que viendront se brancher, dans cet ordre : le compte à rebours
-// des tuiles-pièges "rocher", puis le tour de chaque ennemi.
+// Appelée une fois l'action du joueur terminée (l'animation de saut finie,
+// un tir, ou une interaction). Ordre du tour : le joueur a agi, les pièges
+// décrémentent, puis chaque ennemi joue.
 function finDuTour() {
   if (joueurMort) {
     return;
@@ -438,6 +449,11 @@ function finDuTour() {
   numeroTour++;
   texteTour.setText('Tour : ' + numeroTour);
   decrementerPieges();
+
+  if (joueurMort) {
+    return; // mort à cause d'un piège qui vient de s'effondrer sous lui
+  }
+  jouerTourEnnemis();
 }
 
 // Lit le calque "pieges" de la carte Tiled (s'il existe) : chaque case non
@@ -625,11 +641,12 @@ function caseBloquePourTir(col, row) {
 
 // Touche Espace : tire en ligne droite dans la direction où le joueur
 // regarde (sa dernière direction de déplacement). Le tir avance case par
-// case jusqu'à un mur/porte fermée ou le bord de la carte. Coûte un tour.
-// Pas encore de dégâts sur les ennemis : ça viendra avec leur ajout.
+// case jusqu'à un mur/porte fermée, un ennemi (qu'il tue), ou le bord de la
+// carte. Coûte un tour.
 function tirer() {
   var col = grilleX;
   var row = grilleY;
+  var cibleEnnemi = null;
 
   while (true) {
     var prochainCol = col + direction.x;
@@ -639,16 +656,21 @@ function tirer() {
     }
     col = prochainCol;
     row = prochainRow;
+    if (ennemis[col + ',' + row]) {
+      cibleEnnemi = col + ',' + row;
+      break;
+    }
   }
 
-  animerTir(col, row);
+  animerTir(col, row, cibleEnnemi);
 }
 
 // Anime un petit projectile qui voyage du joueur jusqu'à la case touchée,
 // puis consomme un tour. La vitesse dépend de la distance parcourue (une
 // case = DUREE_TIR ms) pour que le tir reste instantané visuellement même
 // sur une longue portée, sans être un téléport brutal sur une courte.
-function animerTir(colCible, rowCible) {
+// Si cibleEnnemi est renseigné, l'ennemi est détruit à l'impact.
+function animerTir(colCible, rowCible, cibleEnnemi) {
   var xDepart = grilleX * TAILLE_TUILE + TAILLE_TUILE / 2;
   var yDepart = grilleY * TAILLE_TUILE + TAILLE_TUILE / 2;
   var xArrivee = colCible * TAILLE_TUILE + TAILLE_TUILE / 2;
@@ -667,6 +689,9 @@ function animerTir(colCible, rowCible) {
     ease: 'Linear',
     onComplete: function () {
       balle.destroy();
+      if (cibleEnnemi) {
+        tuerEnnemi(cibleEnnemi);
+      }
       finDuTour();
       enDeplacement = false;
     }
@@ -702,6 +727,171 @@ function mourir() {
     { fontSize: '20px', color: '#ffffff', align: 'center' }
   ).setOrigin(0.5);
   camera.ignore(texteMort); // visible seulement via la caméra HUD (voir creerHUD)
+}
+
+// Lit le calque "ennemis" de la carte Tiled (s'il existe) : chaque case non
+// vide devient un ennemi. Pas encore de sprite dédié — un simple cercle de
+// couleur, comme les premiers marqueurs objectifs/pièges avant d'avoir de
+// vrais sprites.
+function chargerEnnemis() {
+  var calque = carte.getLayer('ennemis');
+  if (!calque) {
+    return;
+  }
+  for (var row = 0; row < carte.height; row++) {
+    for (var col = 0; col < carte.width; col++) {
+      var tuile = calque.data[row][col];
+      if (tuile && tuile.index !== -1) {
+        var sprite = sceneJeu.add.circle(
+          col * TAILLE_TUILE + TAILLE_TUILE / 2,
+          row * TAILLE_TUILE + TAILLE_TUILE / 2,
+          TAILLE_TUILE / 2 - 1,
+          COULEUR_ENNEMI
+        );
+        ennemis[col + ',' + row] = { x: col, y: row, sprite: sprite };
+      }
+    }
+  }
+}
+
+// Anime une petite attaque (rouge, pour la distinguer du tir jaune du
+// joueur) qui part de la case de l'ennemi vers le joueur, et ne lui inflige
+// les dégâts qu'une fois arrivée — sans ça les PV baissaient sans qu'on
+// voie jamais l'ennemi attaquer, ce qui donnait une impression de hasard.
+function animerAttaqueEnnemi(colEnnemi, rowEnnemi) {
+  var xDepart = colEnnemi * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var yDepart = rowEnnemi * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var xArrivee = grilleX * TAILLE_TUILE + TAILLE_TUILE / 2;
+  var yArrivee = grilleY * TAILLE_TUILE + TAILLE_TUILE / 2;
+
+  var projectile = sceneJeu.add.circle(xDepart, yDepart, 1.2, COULEUR_ATTAQUE_ENNEMI);
+  masquerAuHUD(projectile);
+
+  sceneJeu.tweens.add({
+    targets: projectile,
+    x: xArrivee,
+    y: yArrivee,
+    duration: DUREE_ATTAQUE_ENNEMI,
+    ease: 'Linear',
+    onComplete: function () {
+      projectile.destroy();
+      subirDegat(DEGAT_ENNEMI);
+    }
+  });
+}
+
+// Détruit un ennemi (touché par un tir du joueur).
+function tuerEnnemi(cle) {
+  var ennemi = ennemis[cle];
+  if (!ennemi) {
+    return;
+  }
+  ennemi.sprite.destroy();
+  delete ennemis[cle];
+}
+
+// Vrai s'il n'y a ni mur ni porte fermée entre deux cases alignées (même
+// ligne ou même colonne) — sert à savoir si un ennemi voit le joueur en
+// ligne droite pour lui tirer dessus. Ne regarde pas les autres ennemis :
+// simplification acceptable vu le nombre d'ennemis en jeu.
+function ligneLibreEntre(col1, row1, col2, row2) {
+  if (col1 === col2) {
+    var pasRow = row2 > row1 ? 1 : -1;
+    for (var r = row1 + pasRow; r !== row2; r += pasRow) {
+      if (caseBloquePourTir(col1, r)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (row1 === row2) {
+    var pasCol = col2 > col1 ? 1 : -1;
+    for (var c = col1 + pasCol; c !== col2; c += pasCol) {
+      if (caseBloquePourTir(c, row1)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false; // pas aligné
+}
+
+// Une case est libre pour un ennemi si elle est dans la carte, sans mur, ni
+// porte fermée, ni autre ennemi. Le joueur n'est pas dans cette liste : un
+// ennemi qui "marcherait" sur le joueur l'attaque plutôt (voir jouerTourEnnemis).
+function caseLibrePourEnnemi(col, row) {
+  if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
+    return false;
+  }
+  var tuileMur = calqueMur.getTileAt(col, row);
+  if (tuileMur !== null && tuileMur !== undefined) {
+    return false;
+  }
+  var porte = portes[col + ',' + row];
+  if (porte && !porte.ouverte) {
+    return false;
+  }
+  if (ennemis[col + ',' + row]) {
+    return false;
+  }
+  return true;
+}
+
+// Fait jouer chaque ennemi une fois : s'il voit le joueur aligné avec lui
+// (même ligne/colonne, sans obstacle entre les deux), il lui tire dessus ;
+// sinon il avance d'une case vers lui (ou l'attaque au contact s'il est déjà
+// adjacent). Appelée à la fin de chaque tour du joueur.
+function jouerTourEnnemis() {
+  for (var cle in ennemis) {
+    var ennemi = ennemis[cle];
+
+    var aligneMemeCol = ennemi.x === grilleX;
+    var aligneMemeRow = ennemi.y === grilleY;
+    if ((aligneMemeCol || aligneMemeRow) && ligneLibreEntre(ennemi.x, ennemi.y, grilleX, grilleY)) {
+      animerAttaqueEnnemi(ennemi.x, ennemi.y);
+      continue;
+    }
+
+    deplacerEnnemiVersJoueur(ennemi, cle);
+  }
+}
+
+// Avance un ennemi d'une case vers le joueur (essaie d'abord l'axe où la
+// distance est la plus grande). Si la case visée est celle du joueur,
+// l'ennemi attaque au contact au lieu de s'y déplacer.
+function deplacerEnnemiVersJoueur(ennemi, cle) {
+  var dx = grilleX - ennemi.x;
+  var dy = grilleY - ennemi.y;
+  var tentatives = [];
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    if (dx !== 0) tentatives.push([Math.sign(dx), 0]);
+    if (dy !== 0) tentatives.push([0, Math.sign(dy)]);
+  } else {
+    if (dy !== 0) tentatives.push([0, Math.sign(dy)]);
+    if (dx !== 0) tentatives.push([Math.sign(dx), 0]);
+  }
+
+  for (var i = 0; i < tentatives.length; i++) {
+    var col = ennemi.x + tentatives[i][0];
+    var row = ennemi.y + tentatives[i][1];
+
+    if (col === grilleX && row === grilleY) {
+      animerAttaqueEnnemi(ennemi.x, ennemi.y);
+      return;
+    }
+
+    if (caseLibrePourEnnemi(col, row)) {
+      delete ennemis[cle];
+      ennemi.x = col;
+      ennemi.y = row;
+      ennemi.sprite.x = col * TAILLE_TUILE + TAILLE_TUILE / 2;
+      ennemi.sprite.y = row * TAILLE_TUILE + TAILLE_TUILE / 2;
+      ennemis[col + ',' + row] = ennemi;
+      return;
+    }
+  }
+  // Aucune des deux cases n'est libre : l'ennemi reste sur place ce tour.
 }
 
 var sceneGame = {
