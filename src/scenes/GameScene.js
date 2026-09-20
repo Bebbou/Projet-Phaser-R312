@@ -28,11 +28,11 @@ var nbObjectifsRestants = 0;
 var grapheObjectifs;
 var COULEUR_OBJECTIF = 0xf5c445;
 
-var pieges = {}; // clé "col,row" -> { x, y, compteur, effondre, texte }
-var graphePieges;
+var pieges = {}; // clé "col,row" -> { x, y, compteur, effondre, texte, fond }
 var COMPTEUR_INITIAL = 3;
 var COULEUR_PIEGE_ACTIF = 0xd9534f;
 var COULEUR_TROU = 0x000000;
+var DUREE_EFFONDREMENT = 220; // ms
 
 var joueurMort = false;
 var toucheR;
@@ -91,7 +91,6 @@ function createGame() {
   nbObjectifsRestants = 0;
   grapheObjectifs = undefined;
   pieges = {};
-  graphePieges = undefined;
   leviers = {};
   portes = {};
   ennemis = {};
@@ -110,7 +109,6 @@ function createGame() {
   chargerEnnemis();
   dessinerGrille();
   dessinerObjectifs();
-  dessinerPieges();
 
   camera.setZoom(ZOOM);
   // La salle est plus petite que l'écran (zoomée), donc on la centre une
@@ -457,8 +455,10 @@ function finDuTour() {
 }
 
 // Lit le calque "pieges" de la carte Tiled (s'il existe) : chaque case non
-// vide devient un piège rocher, avec un compte à rebours et un texte
-// affichant le nombre de tours restants avant effondrement.
+// vide devient un piège rocher, avec un fond coloré, un compte à rebours et
+// un texte affichant le nombre de tours restants avant effondrement. Chaque
+// piège a son propre fond (plutôt qu'un Graphics partagé) pour pouvoir
+// l'animer individuellement à l'effondrement.
 function chargerPieges() {
   var calque = carte.getLayer('pieges');
   if (!calque) {
@@ -468,40 +468,51 @@ function chargerPieges() {
     for (var col = 0; col < carte.width; col++) {
       var tuile = calque.data[row][col];
       if (tuile && tuile.index !== -1) {
-        var texte = sceneJeu.add.text(
-          col * TAILLE_TUILE + TAILLE_TUILE / 2,
-          row * TAILLE_TUILE + TAILLE_TUILE / 2,
-          String(COMPTEUR_INITIAL),
-          { fontSize: '6px', color: '#ffffff' }
-        ).setOrigin(0.5);
+        var cx = col * TAILLE_TUILE + TAILLE_TUILE / 2;
+        var cy = row * TAILLE_TUILE + TAILLE_TUILE / 2;
+
+        var fond = sceneJeu.add.rectangle(cx, cy, TAILLE_TUILE, TAILLE_TUILE, COULEUR_PIEGE_ACTIF, 0.5);
+
+        // resolution : le texte est minuscule (6px) puis zoomé x4 par la
+        // caméra — sans ça, l'antialiasing de la police rendait les
+        // chiffres flous une fois agrandis. On fait correspondre la
+        // résolution du texte au zoom pour qu'il reste net.
+        var texte = sceneJeu.add.text(cx, cy, String(COMPTEUR_INITIAL), {
+          fontSize: '6px',
+          color: '#ffffff',
+          resolution: ZOOM
+        }).setOrigin(0.5);
 
         pieges[col + ',' + row] = {
           x: col,
           y: row,
           compteur: COMPTEUR_INITIAL,
           effondre: false,
-          texte: texte
+          texte: texte,
+          fond: fond
         };
       }
     }
   }
 }
 
-// Redessine le fond de chaque piège : rouge/orangé tant qu'il n'est pas
-// effondré, noir (trou) une fois effondré.
-function dessinerPieges() {
-  if (!graphePieges) {
-    graphePieges = sceneJeu.add.graphics();
-  }
-  graphePieges.clear();
+// Anime l'effondrement d'un piège : le fond rétrécit (comme si le sol
+// s'enfonçait) puis devient un trou noir plein une fois "tombé".
+function effondrerPiege(p) {
+  p.effondre = true;
+  p.texte.setVisible(false);
 
-  for (var cle in pieges) {
-    var p = pieges[cle];
-    var px = p.x * TAILLE_TUILE;
-    var py = p.y * TAILLE_TUILE;
-    graphePieges.fillStyle(p.effondre ? COULEUR_TROU : COULEUR_PIEGE_ACTIF, p.effondre ? 1 : 0.5);
-    graphePieges.fillRect(px, py, TAILLE_TUILE, TAILLE_TUILE);
-  }
+  sceneJeu.tweens.add({
+    targets: p.fond,
+    scaleX: 0.15,
+    scaleY: 0.15,
+    duration: DUREE_EFFONDREMENT,
+    ease: 'Sine.easeIn',
+    onComplete: function () {
+      p.fond.setFillStyle(COULEUR_TROU, 1);
+      p.fond.setScale(1);
+    }
+  });
 }
 
 // Décrémente le compte à rebours de chaque piège pas encore effondré ; à 0,
@@ -516,8 +527,7 @@ function decrementerPieges() {
     }
     p.compteur--;
     if (p.compteur <= 0) {
-      p.effondre = true;
-      p.texte.setVisible(false);
+      effondrerPiege(p);
       unPiegeVientDeSEffondrer = true;
     } else {
       p.texte.setText(String(p.compteur));
@@ -525,7 +535,6 @@ function decrementerPieges() {
   }
 
   if (unPiegeVientDeSEffondrer) {
-    dessinerPieges();
     verifierPiege(); // le joueur peut se retrouver sur un trou qui vient d'apparaître sous lui
   }
 }
