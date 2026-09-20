@@ -211,9 +211,11 @@ function dessinerGrille() {
 
 // Une case est libre si elle est dans la carte, que le calque "mur" n'y a
 // pas de tuile, qu'elle n'est pas une tuile objectif déjà coloriée (redevient
-// infranchissable une fois coloriée), et qu'elle n'est pas une porte encore
-// fermée. Important de vérifier les limites : une case hors carte n'a pas de
-// tuile non plus, donc sans ce test elle serait considérée "libre".
+// infranchissable une fois coloriée), qu'elle n'est pas une porte encore
+// fermée, et qu'elle n'a pas de levier (un levier s'actionne depuis une case
+// adjacente avec E/F, pas en marchant dessus). Important de vérifier les
+// limites : une case hors carte n'a pas de tuile non plus, donc sans ce
+// test elle serait considérée "libre".
 function caseLibre(col, row) {
   if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
     return false;
@@ -228,6 +230,9 @@ function caseLibre(col, row) {
   }
   var porte = portes[col + ',' + row];
   if (porte && !porte.ouverte) {
+    return false;
+  }
+  if (leviers[col + ',' + row]) {
     return false;
   }
   return true;
