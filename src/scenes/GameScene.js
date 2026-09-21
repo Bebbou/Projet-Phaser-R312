@@ -1,10 +1,9 @@
 // Scène de jeu : le joueur se déplace case par case avec les flèches ou ZQSD,
-// sur la carte Tiled chargée depuis src/assets/maps/map.json.
+// à travers les salles Tiled listées dans SALLES (voir plus bas).
 //
-// Système de tour : chaque déplacement valide du joueur fait avancer le
-// monde d'un tour (finDuTour()). Pour l'instant ça ne fait qu'incrémenter
-// un compteur affiché à l'écran, mais c'est le point d'accroche où viendront
-// se greffer le compte à rebours des pièges et le tour des ennemis.
+// Système de tour : chaque déplacement (ou tir, ou interaction) valide du
+// joueur fait avancer le monde d'un tour (finDuTour()) — les pièges
+// décomptent et les ennemis jouent à ce moment-là.
 var TAILLE_TUILE = 8;
 var ZOOM = 4; // les tuiles font 8px, on zoome pour que ce soit jouable à l'écran
 var SAUT_DUREE = 140; // ms, durée du petit saut entre deux cases
@@ -365,10 +364,10 @@ function dessinerGrille() {
 // Une case est libre si elle est dans la carte, que le calque "mur" n'y a
 // pas de tuile, qu'elle n'est pas une tuile objectif déjà coloriée (redevient
 // infranchissable une fois coloriée), qu'elle n'est pas une porte encore
-// fermée, et qu'elle n'a pas de levier (un levier s'actionne depuis une case
-// adjacente avec E/F, pas en marchant dessus). Important de vérifier les
-// limites : une case hors carte n'a pas de tuile non plus, donc sans ce
-// test elle serait considérée "libre".
+// fermée, qu'elle n'a pas de levier (un levier s'actionne depuis une case
+// adjacente avec E/F, pas en marchant dessus), et qu'aucun ennemi ne s'y
+// trouve. Important de vérifier les limites : une case hors carte n'a pas de
+// tuile non plus, donc sans ce test elle serait considérée "libre".
 function caseLibre(col, row) {
   if (col < 0 || col >= carte.width || row < 0 || row >= carte.height) {
     return false;
@@ -702,7 +701,10 @@ function chargerDepart() {
 // suivante (les PV sont conservés), ou termine le niveau si c'était la
 // dernière. Retourne vrai si la salle est en train de changer.
 function verifierSortie() {
-  if (!sortie || grilleX !== sortie.x || grilleY !== sortie.y) {
+  // joueurMort peut déjà être vrai ici si un piège vient de s'effondrer sous
+  // le joueur sur cette même case (verifierPiege() est appelé juste avant) —
+  // dans ce cas la mort prime, pas question de changer de salle.
+  if (joueurMort || !sortie || grilleX !== sortie.x || grilleY !== sortie.y) {
     return false;
   }
   if (indexSalle + 1 < SALLES.length) {
