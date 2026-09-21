@@ -21,6 +21,8 @@ var SALLES = [
 ];
 var indexSalle = 0;
 var sortie; // { x, y } case de sortie de la salle courante, ou null si absente
+var grapheSortie;
+var COULEUR_SORTIE = 0x2ecc71;
 
 var joueur;
 var indicateurDirection;
@@ -122,6 +124,7 @@ function createGame(data) {
   portes = {};
   ennemis = {};
   sortie = null;
+  grapheSortie = undefined;
 
   // La carte : calques "sol" (décor), "mur" (bloque le déplacement),
   // "objectifs", "pieges", "leviers", "portes", "ennemis", "sortie" et
@@ -140,6 +143,7 @@ function createGame(data) {
   chargerDepart();
   dessinerGrille();
   dessinerObjectifs();
+  dessinerSortie();
 
   camera.setZoom(ZOOM);
   // La salle est plus petite que l'écran (zoomée), donc on la centre une
@@ -695,6 +699,26 @@ function chargerDepart() {
       }
     }
   }
+}
+
+// Dessine un marqueur vert sur la case de sortie (rien si la salle n'en a
+// pas). Sans ça, la sortie était invisible en jeu — le mécanisme
+// fonctionnait mais rien à l'écran n'indiquait où aller une fois la salle
+// résolue.
+function dessinerSortie() {
+  if (!grapheSortie) {
+    grapheSortie = sceneJeu.add.graphics();
+  }
+  grapheSortie.clear();
+  if (!sortie) {
+    return;
+  }
+  var px = sortie.x * TAILLE_TUILE;
+  var py = sortie.y * TAILLE_TUILE;
+  grapheSortie.fillStyle(COULEUR_SORTIE, 0.55);
+  grapheSortie.fillRect(px + 1, py + 1, TAILLE_TUILE - 2, TAILLE_TUILE - 2);
+  grapheSortie.lineStyle(0.5, COULEUR_SORTIE, 0.9);
+  grapheSortie.strokeRect(px + 1, py + 1, TAILLE_TUILE - 2, TAILLE_TUILE - 2);
 }
 
 // Si le joueur vient d'arriver sur la case de sortie, passe à la salle
