@@ -13,12 +13,23 @@ var SAUT_HAUTEUR = 3; // px, hauteur du rebond
 // suffit d'ajouter une entrée ici et de dessiner la carte correspondante
 // dans Tiled (mêmes noms de calques que les autres : sol, mur, objectifs,
 // pieges, leviers, portes, ennemis, sortie, depart).
+// nom : affiché dans le HUD. aide : texte d'explication affiché en bas
+// (optionnel, utilisé par le tutoriel).
 var SALLES = [
-  { cle: 'salle1', fichier: 'src/assets/maps/map.json' },
-  { cle: 'salle2', fichier: 'src/assets/maps/map2.json' },
-  { cle: 'salle3', fichier: 'src/assets/maps/map3.json' },
-  { cle: 'salle4', fichier: 'src/assets/maps/map4.json' }
+  {
+    cle: 'tuto', fichier: 'src/assets/maps/map0.json', nom: 'Tutoriel',
+    aide: 'Marche sur les cases dorées pour les colorier. Évite les cases rouges : elles s\'effondrent après 3 tours.\n' +
+      'Colorie toutes les cases dorées, ou actionne le levier (E/F à côté), pour ouvrir la porte.\n' +
+      'Tire sur l\'ennemi avec Espace (dans la direction où tu regardes), puis rejoins la case verte.'
+  },
+  { cle: 'salle1', fichier: 'src/assets/maps/map.json', nom: 'Salle 1' },
+  { cle: 'salle2', fichier: 'src/assets/maps/map2.json', nom: 'Salle 2' },
+  { cle: 'salle3', fichier: 'src/assets/maps/map3.json', nom: 'Salle 3' },
+  { cle: 'salle4', fichier: 'src/assets/maps/map4.json', nom: 'Salle 4' }
 ];
+var PREMIERE_SALLE_JEU = 1; // après une mort on repart ici (le tutoriel n'est joué qu'une fois)
+var texteAide;
+var AIDE_COMMANDES = 'Flèches / ZQSD : bouger   Maj + direction : se tourner   Espace : tirer   E / F : levier';
 var indexSalle = 0;
 var sortie; // { x, y } case de sortie de la salle courante, ou null si absente
 var grapheSortie;
@@ -203,7 +214,18 @@ function creerHUD() {
   });
   majTexteHUD();
 
-  var elementsHUD = [fondHUD, texteHUD];
+  // Texte d'aide en bas de l'écran : rappel des commandes, précédé de
+  // l'explication propre à la salle s'il y en a une.
+  var aide = SALLES[indexSalle].aide ? SALLES[indexSalle].aide + '\n\n' : '';
+  texteAide = sceneJeu.add.text(sceneJeu.scale.width / 2, sceneJeu.scale.height - 20, aide + AIDE_COMMANDES, {
+    fontSize: '13px',
+    color: '#cccccc',
+    align: 'center',
+    wordWrap: { width: 760 },
+    lineSpacing: 4
+  }).setOrigin(0.5, 1);
+
+  var elementsHUD = [fondHUD, texteHUD, texteAide];
   elementsHUD.forEach(function (objet) {
     camera.ignore(objet);
   });
@@ -219,7 +241,7 @@ function creerHUD() {
 // depuis chaque endroit du code qui modifie l'une de ces valeurs.
 function majTexteHUD() {
   texteHUD.setText(
-    'Salle : ' + (indexSalle + 1) + ' / ' + SALLES.length + '\n' +
+    SALLES[indexSalle].nom + '\n' +
     'PV : ' + pv + '\n' +
     'Objectifs : ' + nbObjectifsRestants + ' restant' + (nbObjectifsRestants !== 1 ? 's' : '') + '\n' +
     'Tour : ' + numeroTour
@@ -285,7 +307,8 @@ function updateGame() {
   // données passées au restart précédent (celles du passage de salle).
   if (joueurMort || joueurAGagne) {
     if (Phaser.Input.Keyboard.JustDown(toucheR)) {
-      sceneJeu.scene.restart({ indexSalle: 0, conserverPV: false });
+      var retour = indexSalle === 0 ? 0 : PREMIERE_SALLE_JEU;
+      sceneJeu.scene.restart({ indexSalle: retour, conserverPV: false });
     }
     return;
   }
@@ -299,14 +322,24 @@ function updateGame() {
   // déplacement normal (qui tourne aussi le joueur au passage).
   var seTournerSeulement = clavier.shift.isDown;
 
+  var dx = 0;
+  var dy = 0;
   if (Phaser.Input.Keyboard.JustDown(clavier.up) || Phaser.Input.Keyboard.JustDown(zqsd.haut)) {
-    seTournerSeulement ? seTourner(0, -1) : deplacer(0, -1);
+    dy = -1;
   } else if (Phaser.Input.Keyboard.JustDown(clavier.down) || Phaser.Input.Keyboard.JustDown(zqsd.bas)) {
-    seTournerSeulement ? seTourner(0, 1) : deplacer(0, 1);
+    dy = 1;
   } else if (Phaser.Input.Keyboard.JustDown(clavier.left) || Phaser.Input.Keyboard.JustDown(zqsd.gauche)) {
-    seTournerSeulement ? seTourner(-1, 0) : deplacer(-1, 0);
+    dx = -1;
   } else if (Phaser.Input.Keyboard.JustDown(clavier.right) || Phaser.Input.Keyboard.JustDown(zqsd.droite)) {
-    seTournerSeulement ? seTourner(1, 0) : deplacer(1, 0);
+    dx = 1;
+  }
+
+  if (dx !== 0 || dy !== 0) {
+    if (seTournerSeulement) {
+      seTourner(dx, dy);
+    } else {
+      deplacer(dx, dy);
+    }
   } else if (Phaser.Input.Keyboard.JustDown(toucheE) || Phaser.Input.Keyboard.JustDown(toucheF)) {
     interagir();
   } else if (Phaser.Input.Keyboard.JustDown(toucheEspace)) {

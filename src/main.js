@@ -1,5 +1,5 @@
 // Configuration principale du jeu Phaser.
-const config = {
+var config = {
   type: Phaser.AUTO,
   width: 800,
   height: 600,
@@ -9,4 +9,4 @@ const config = {
   scene: [sceneBoot, sceneMenu, sceneGame]
 };
 
-const game = new Phaser.Game(config);
+var game =new Phaser.Game(config);
