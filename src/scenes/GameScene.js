@@ -110,7 +110,7 @@ function preloadGame() {
     this.load.tilemapTiledJSON(SALLES[i].cle, SALLES[i].fichier);
   }
 
-  var sons = ['tir', 'porte', 'levier', 'objectif', 'degat', 'mort', 'ennemi_mort', 'victoire', 'musique'];
+  var sons = ['tir', 'porte', 'levier', 'objectif', 'degat', 'mort', 'ennemi_mort', 'niveau', 'victoire', 'musique'];
   for (var s = 0; s < sons.length; s++) {
     this.load.audio(sons[s], 'src/assets/audio/' + sons[s] + '.wav');
   }
@@ -968,6 +968,7 @@ function verifierSortie(j) {
   }
 
   if (indexSalle + 1 < SALLES.length) {
+    jouerSon('niveau');
     sceneJeu.scene.restart({ indexSalle: indexSalle + 1, conserverPV: true });
   } else {
     gagner();
